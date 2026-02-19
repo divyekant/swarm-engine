@@ -342,6 +342,53 @@ describe('validateDAG', () => {
     expect(result.errors.length).toBeGreaterThanOrEqual(2);
   });
 
+  // --- Conditional edge node existence validation ---
+
+  it('rejects conditional edge with non-existent source node', () => {
+    const dag: DAGDefinition = {
+      id: 'test',
+      nodes: [
+        { id: 'a', agent: agent('a') },
+        { id: 'b', agent: agent('b') },
+      ],
+      edges: [],
+      conditionalEdges: [
+        {
+          from: 'nonexistent',
+          evaluate: { type: 'rule', fn: () => 'b' },
+          targets: { pass: 'b' },
+        },
+      ],
+      dynamicNodes: [],
+    };
+
+    const result = validateDAG(dag);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('nonexistent'))).toBe(true);
+  });
+
+  it('rejects conditional edge with non-existent target node', () => {
+    const dag: DAGDefinition = {
+      id: 'test',
+      nodes: [
+        { id: 'a', agent: agent('a') },
+      ],
+      edges: [],
+      conditionalEdges: [
+        {
+          from: 'a',
+          evaluate: { type: 'rule', fn: () => 'ghost' },
+          targets: { pass: 'ghost' },
+        },
+      ],
+      dynamicNodes: [],
+    };
+
+    const result = validateDAG(dag);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('ghost'))).toBe(true);
+  });
+
   // --- Edge cases ---
 
   it('handles empty DAG', () => {

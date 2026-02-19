@@ -125,6 +125,32 @@ export function validateDAG(
     }
   }
 
+  // 1b. Conditional edge node validation
+  for (const ce of dag.conditionalEdges) {
+    if (!nodeIds.has(ce.from)) {
+      errors.push(
+        `Conditional edge source "${ce.from}" does not exist in the DAG`,
+      );
+    }
+    for (const [label, targetId] of Object.entries(ce.targets)) {
+      if (!nodeIds.has(targetId)) {
+        errors.push(
+          `Conditional edge target "${targetId}" (label "${label}") from "${ce.from}" does not exist in the DAG`,
+        );
+      }
+    }
+  }
+
+  // 1c. Regular edge endpoint validation
+  for (const edge of dag.edges) {
+    if (!nodeIds.has(edge.from)) {
+      errors.push(`Edge source "${edge.from}" does not exist in the DAG`);
+    }
+    if (!nodeIds.has(edge.to)) {
+      errors.push(`Edge target "${edge.to}" does not exist in the DAG`);
+    }
+  }
+
   // 2. Cycle detection — every edge in a cycle must have maxCycles
   const cycles = findCycleEdges(dag);
   for (const cycle of cycles) {
