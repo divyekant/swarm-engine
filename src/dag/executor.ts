@@ -1,9 +1,10 @@
-import type { SwarmEvent, NodeResult, CostSummary } from '../types.js';
+import type { SwarmEvent, NodeResult, CostSummary, ProviderAdapter } from '../types.js';
 import type { AgentRunner } from '../agent/runner.js';
 import type { CostTracker } from '../cost/tracker.js';
 import type { SwarmMemory } from '../memory/index.js';
 import { DAGGraph } from './graph.js';
 import { Scheduler } from './scheduler.js';
+import { evaluate } from '../agent/evaluator.js';
 
 /**
  * DAGExecutor orchestrates the execution of a full DAG.
@@ -15,6 +16,7 @@ import { Scheduler } from './scheduler.js';
  * Supports:
  * - Sequential pipelines (A -> B -> C)
  * - Parallel fan-out/fan-in (A -> B,C -> D)
+ * - Conditional routing via evaluators (rule, regex, LLM)
  * - Budget tracking with warnings at 80% and hard stop at limit
  * - Cancellation via AbortSignal
  * - Failure propagation (downstream nodes are skipped)
@@ -26,6 +28,10 @@ export class DAGExecutor {
   private readonly memory: SwarmMemory;
   private readonly task: string;
   private readonly signal?: AbortSignal;
+  private readonly provider?: ProviderAdapter;
+
+  /** Nodes that are targets of conditional edges and haven't been resolved yet. */
+  private readonly conditionallyBlocked: Set<string> = new Set();
 
   constructor(
     graph: DAGGraph,
@@ -34,6 +40,7 @@ export class DAGExecutor {
     memory: SwarmMemory,
     task: string,
     signal?: AbortSignal,
+    provider?: ProviderAdapter,
   ) {
     this.graph = graph;
     this.runner = runner;
@@ -41,6 +48,15 @@ export class DAGExecutor {
     this.memory = memory;
     this.task = task;
     this.signal = signal;
+    this.provider = provider;
+
+    // Pre-compute the set of nodes that are targets of conditional edges.
+    // These nodes must not run until their conditional edge is evaluated.
+    for (const ce of graph.conditionalEdges) {
+      for (const targetNodeId of Object.values(ce.targets)) {
+        this.conditionallyBlocked.add(targetNodeId);
+      }
+    }
   }
 
   async *execute(): AsyncGenerator<SwarmEvent> {
@@ -67,7 +83,10 @@ export class DAGExecutor {
           return;
         }
 
-        const readyNodes = scheduler.getReadyNodes();
+        // Filter out conditionally blocked nodes from the ready set
+        const readyNodes = scheduler.getReadyNodes().filter(
+          (n) => !this.conditionallyBlocked.has(n.id),
+        );
 
         if (readyNodes.length === 0) {
           // No nodes are ready and we're not done -- all remaining nodes
@@ -208,6 +227,9 @@ export class DAGExecutor {
           cost: lastDoneEvent.cost,
           durationMs: Date.now() - startTime,
         });
+
+        // Evaluate conditional edges originating from this node
+        yield* this.evaluateConditionalEdges(nodeId, lastDoneEvent.output, scheduler);
       } else {
         // No agent_done event was received -- treat as failure
         scheduler.markFailed(nodeId);
@@ -297,6 +319,15 @@ export class DAGExecutor {
             cost: lastDoneEvent.cost,
             durationMs: Date.now() - startTime,
           });
+
+          // Evaluate conditional edges originating from this node
+          for await (const routeEvent of this.evaluateConditionalEdges(
+            nodeId,
+            lastDoneEvent.output,
+            scheduler,
+          )) {
+            events.push(routeEvent);
+          }
         } else {
           scheduler.markFailed(nodeId);
           this.skipDownstream(nodeId, scheduler);
@@ -332,18 +363,22 @@ export class DAGExecutor {
   }
 
   /**
-   * Get upstream outputs for a node by looking at its incoming edges.
+   * Get upstream outputs for a node by looking at its incoming regular edges
+   * and any resolved conditional edges that selected this node.
    */
   private getUpstreamOutputs(
     nodeId: string,
     outputs: Map<string, { agentRole: string; output: string }>,
   ): { nodeId: string; agentRole: string; output: string }[] {
-    const incoming = this.graph.getIncomingEdges(nodeId);
     const upstream: { nodeId: string; agentRole: string; output: string }[] = [];
+    const seen = new Set<string>();
 
+    // Regular incoming edges
+    const incoming = this.graph.getIncomingEdges(nodeId);
     for (const edge of incoming) {
       const result = outputs.get(edge.from);
-      if (result) {
+      if (result && !seen.has(edge.from)) {
+        seen.add(edge.from);
         upstream.push({
           nodeId: edge.from,
           agentRole: result.agentRole,
@@ -352,20 +387,129 @@ export class DAGExecutor {
       }
     }
 
+    // Conditional edges that target this node
+    for (const ce of this.graph.conditionalEdges) {
+      const isTarget = Object.values(ce.targets).includes(nodeId);
+      if (isTarget && !seen.has(ce.from)) {
+        const result = outputs.get(ce.from);
+        if (result) {
+          seen.add(ce.from);
+          upstream.push({
+            nodeId: ce.from,
+            agentRole: result.agentRole,
+            output: result.output,
+          });
+        }
+      }
+    }
+
     return upstream;
   }
 
   /**
    * Mark all downstream nodes of a failed node as skipped.
+   * Checks both regular edges and conditional edge targets.
    */
   private skipDownstream(failedNodeId: string, scheduler: Scheduler): void {
+    // Skip regular downstream nodes
     const outgoing = this.graph.getOutgoingEdges(failedNodeId);
     for (const edge of outgoing) {
       const status = scheduler.getStatus(edge.to);
       if (status === 'pending') {
         scheduler.markSkipped(edge.to);
+        this.conditionallyBlocked.delete(edge.to);
         // Recursively skip further downstream
         this.skipDownstream(edge.to, scheduler);
+      }
+    }
+
+    // Skip conditional downstream nodes
+    const conditionalEdges = this.graph.getConditionalEdges(failedNodeId);
+    for (const ce of conditionalEdges) {
+      for (const targetNodeId of Object.values(ce.targets)) {
+        const status = scheduler.getStatus(targetNodeId);
+        if (status === 'pending') {
+          scheduler.markSkipped(targetNodeId);
+          this.conditionallyBlocked.delete(targetNodeId);
+          this.skipDownstream(targetNodeId, scheduler);
+        }
+      }
+    }
+  }
+
+  /**
+   * Evaluate all conditional edges originating from a completed node.
+   *
+   * For each conditional edge:
+   * 1. Run the evaluator to determine which target label was selected
+   * 2. Look up the target node ID from the targets map
+   * 3. Unblock the selected target so it can be scheduled
+   * 4. Skip all non-selected targets (and their downstream)
+   * 5. Emit a route_decision event
+   */
+  private async *evaluateConditionalEdges(
+    nodeId: string,
+    output: string,
+    scheduler: Scheduler,
+  ): AsyncGenerator<SwarmEvent> {
+    const conditionalEdges = this.graph.getConditionalEdges(nodeId);
+    if (conditionalEdges.length === 0) return;
+
+    for (const ce of conditionalEdges) {
+      // Evaluate to get either a target label (from targets map) or a direct node ID
+      const evaluatorResult = await evaluate(ce.evaluate, output, this.provider);
+
+      // The result could be a label key in the targets map or a direct node ID
+      let selectedNodeId: string | undefined;
+      let reason = evaluatorResult;
+
+      if (ce.targets[evaluatorResult] !== undefined) {
+        // Result is a label key in the targets map
+        selectedNodeId = ce.targets[evaluatorResult];
+        reason = evaluatorResult;
+      } else {
+        // Result might be a direct node ID (if the evaluator returns node IDs directly)
+        const targetNodeIds = Object.values(ce.targets);
+        if (targetNodeIds.includes(evaluatorResult)) {
+          selectedNodeId = evaluatorResult;
+          // Find the label for the reason
+          const entry = Object.entries(ce.targets).find(([, v]) => v === evaluatorResult);
+          reason = entry ? entry[0] : evaluatorResult;
+        }
+      }
+
+      if (selectedNodeId) {
+        // Unblock the selected target
+        this.conditionallyBlocked.delete(selectedNodeId);
+
+        // Skip all non-selected targets
+        for (const [label, targetNodeId] of Object.entries(ce.targets)) {
+          if (targetNodeId !== selectedNodeId) {
+            const status = scheduler.getStatus(targetNodeId);
+            if (status === 'pending') {
+              scheduler.markSkipped(targetNodeId);
+              this.conditionallyBlocked.delete(targetNodeId);
+              this.skipDownstream(targetNodeId, scheduler);
+            }
+          }
+        }
+
+        yield {
+          type: 'route_decision',
+          fromNode: nodeId,
+          toNode: selectedNodeId,
+          reason,
+        };
+      } else {
+        // No valid target found -- skip all conditional targets
+        for (const targetNodeId of Object.values(ce.targets)) {
+          const status = scheduler.getStatus(targetNodeId);
+          if (status === 'pending') {
+            scheduler.markSkipped(targetNodeId);
+            this.conditionallyBlocked.delete(targetNodeId);
+            this.skipDownstream(targetNodeId, scheduler);
+          }
+        }
       }
     }
   }
