@@ -141,7 +141,6 @@ export type Evaluator =
 export type ProviderEvent =
   | { type: 'chunk'; content: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
-  | { type: 'tool_result_needed'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'usage'; inputTokens: number; outputTokens: number };
 
 export interface StreamParams {

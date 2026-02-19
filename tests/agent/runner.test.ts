@@ -55,4 +55,46 @@ describe('AgentRunner', () => {
     // Cost should be recorded
     expect(costTracker.getSwarmTotal().calls).toBe(1);
   });
+
+  it('executes tool calls from provider tool_use events', async () => {
+    let callCount = 0;
+    const provider: ProviderAdapter = {
+      async *stream() {
+        callCount++;
+        if (callCount === 1) {
+          yield { type: 'tool_use' as const, id: 'call-1', name: 'send_message', input: { to: '*', content: 'hello' } };
+        } else {
+          yield { type: 'chunk' as const, content: 'done' };
+        }
+        yield { type: 'usage' as const, inputTokens: 50, outputTokens: 20 };
+      },
+      estimateCost: () => 1,
+      getModelLimits: () => ({ contextWindow: 128_000, maxOutput: 4096 }),
+    };
+
+    const memory = new SwarmMemory();
+    const costTracker = new CostTracker();
+    const assembler = new ContextAssembler({
+      context: new NoopContextProvider(),
+      memory: new NoopMemoryProvider(),
+      codebase: new NoopCodebaseProvider(),
+      persona: new NoopPersonaProvider(),
+    });
+
+    const runner = new AgentRunner(provider, assembler, costTracker);
+
+    const events: SwarmEvent[] = [];
+    for await (const event of runner.run({
+      nodeId: 'tool-node',
+      agent: { id: 'tool-agent', name: 'Tool Agent', role: 'tool', systemPrompt: 'You use tools.' },
+      task: 'Send a message',
+      memory,
+    })) {
+      events.push(event);
+    }
+
+    const toolEvents = events.filter(e => e.type === 'agent_tool_use');
+    expect(toolEvents).toHaveLength(1);
+    expect(toolEvents[0]).toMatchObject({ tool: 'send_message' });
+  });
 });

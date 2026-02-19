@@ -102,7 +102,7 @@ export class AgentRunner {
               break;
             }
 
-            case 'tool_result_needed': {
+            case 'tool_use': {
               // Handle tool call: execute via AgentNode, yield event
               const result = node.handleToolCall(
                 { id: event.id, name: event.name, input: event.input },
