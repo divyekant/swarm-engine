@@ -160,6 +160,14 @@ export class Scheduler {
     this.statuses.set(nodeId, 'pending');
   }
 
+  /** Register a new node (for dynamic expansion). Sets initial status to 'pending'. */
+  registerNode(nodeId: string): void {
+    if (this.statuses.has(nodeId)) {
+      throw new Error(`Node "${nodeId}" already registered`);
+    }
+    this.statuses.set(nodeId, 'pending');
+  }
+
   /** Count nodes with a specific status. */
   private countByStatus(status: NodeStatus): number {
     let count = 0;

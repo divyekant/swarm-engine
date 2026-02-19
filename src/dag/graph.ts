@@ -4,8 +4,8 @@ import type { DAGDefinition, DAGNode, DAGEdge, ConditionalEdge } from '../types.
  * Runtime wrapper around a DAGDefinition providing traversal helpers.
  */
 export class DAGGraph {
-  readonly nodes: DAGNode[];
-  readonly edges: DAGEdge[];
+  nodes: DAGNode[];
+  edges: DAGEdge[];
   readonly conditionalEdges: ConditionalEdge[];
   readonly dynamicNodes: string[];
   readonly id: string;
@@ -49,5 +49,15 @@ export class DAGGraph {
     const sources = new Set(this.edges.map((e) => e.from));
     const conditionalSources = new Set(this.conditionalEdges.map((e) => e.from));
     return this.nodes.filter((n) => !sources.has(n.id) && !conditionalSources.has(n.id));
+  }
+
+  /** Add a node dynamically at runtime. */
+  addNode(node: DAGNode): void {
+    this.nodes.push(node);
+  }
+
+  /** Add an edge dynamically at runtime. */
+  addEdge(edge: DAGEdge): void {
+    this.edges.push(edge);
   }
 }

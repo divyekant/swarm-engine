@@ -233,6 +233,11 @@ export class DAGExecutor {
 
         // Handle cycle edges originating from this node
         yield* this.handleCycleEdges(nodeId, scheduler);
+
+        // Handle dynamic DAG expansion
+        if (node.canEmitDAG) {
+          yield* this.handleDynamicExpansion(nodeId, lastDoneEvent.output, scheduler);
+        }
       } else {
         // No agent_done event was received -- treat as failure
         scheduler.markFailed(nodeId);
@@ -335,6 +340,13 @@ export class DAGExecutor {
           // Handle cycle edges originating from this node
           for await (const cycleEvent of this.handleCycleEdges(nodeId, scheduler)) {
             events.push(cycleEvent);
+          }
+
+          // Handle dynamic DAG expansion
+          if (node.canEmitDAG) {
+            for await (const dynEvent of this.handleDynamicExpansion(nodeId, lastDoneEvent.output, scheduler)) {
+              events.push(dynEvent);
+            }
           }
         } else {
           scheduler.markFailed(nodeId);
@@ -553,6 +565,48 @@ export class DAGExecutor {
       if (iteration < edge.maxCycles) {
         scheduler.resetNodeForCycle(nodeId);
       }
+    }
+  }
+
+  /**
+   * Handle dynamic DAG expansion from a coordinator node.
+   *
+   * When a node with `canEmitDAG: true` completes, its output is parsed as JSON.
+   * If valid, the new nodes and edges are merged into the running graph and
+   * registered with the scheduler so they become schedulable in the next loop iteration.
+   */
+  private async *handleDynamicExpansion(
+    nodeId: string,
+    output: string,
+    scheduler: Scheduler,
+  ): AsyncGenerator<SwarmEvent> {
+    try {
+      const parsed = JSON.parse(output);
+
+      // Validate shape
+      if (
+        !parsed.nodes ||
+        !Array.isArray(parsed.nodes) ||
+        !parsed.edges ||
+        !Array.isArray(parsed.edges)
+      ) {
+        return; // silently skip if not a valid DAG shape
+      }
+
+      // Add new nodes to graph and scheduler
+      for (const node of parsed.nodes) {
+        if (!node.id || !node.agent) continue; // skip invalid nodes
+        this.graph.addNode(node);
+        scheduler.registerNode(node.id);
+      }
+
+      // Add new edges to graph
+      for (const edge of parsed.edges) {
+        if (!edge.from || !edge.to) continue; // skip invalid edges
+        this.graph.addEdge(edge);
+      }
+    } catch {
+      // JSON parse failure — not a DAG output, skip silently
     }
   }
 
