@@ -1,6 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { ProviderAdapter, ProviderEvent, StreamParams } from '../../types.js';
 
+const ALLOWED_HOSTS = [
+  'api.anthropic.com',
+  'anthropic.com',
+];
+
+function isAllowedAnthropicHost(baseUrl: string): boolean {
+  try {
+    const { hostname } = new URL(baseUrl);
+    return ALLOWED_HOSTS.includes(hostname) || hostname.endsWith('.anthropic.com');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Pricing and limits reused from the standard Anthropic provider.
  * OAuth subscription tokens access the same models.
@@ -76,6 +90,12 @@ export class AnthropicOAuthProvider implements ProviderAdapter {
   private client: Anthropic;
 
   constructor(oauthToken: string, baseUrl?: string) {
+    if (baseUrl && !isAllowedAnthropicHost(baseUrl)) {
+      throw new Error(
+        `"${baseUrl}" is not an allowed Anthropic host. OAuth tokens must only be sent to *.anthropic.com`,
+      );
+    }
+
     this.client = new Anthropic({
       apiKey: 'placeholder', // Overridden by custom fetch
       fetch: createOAuthFetch(oauthToken),
