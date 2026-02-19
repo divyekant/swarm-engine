@@ -91,6 +91,25 @@ export class SwarmEngine {
       return;
     }
 
+    // 1b. Apply engine defaults to agent descriptors
+    const defaults = this.config.defaults;
+    if (defaults) {
+      for (const node of options.dag.nodes) {
+        if (!node.agent.model && defaults.model) {
+          node.agent.model = defaults.model;
+        }
+        if (node.agent.temperature === undefined && defaults.temperature !== undefined) {
+          node.agent.temperature = defaults.temperature;
+        }
+        if (node.agent.maxTokens === undefined && defaults.maxTokens !== undefined) {
+          node.agent.maxTokens = defaults.maxTokens;
+        }
+        if (!node.agent.providerId && defaults.provider) {
+          node.agent.providerId = defaults.provider;
+        }
+      }
+    }
+
     // 2. Create cost tracker with budget from config
     const costTracker = new CostTracker(
       this.config.limits?.maxSwarmBudgetCents ?? null,

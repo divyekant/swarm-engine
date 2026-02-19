@@ -26,8 +26,8 @@ export {
   NoopLifecycleHooks,
 } from './adapters/defaults.js';
 
-// Provider factory
-export { createProvider } from './adapters/providers/index.js';
+// Provider factory + providers
+export { createProvider, AnthropicOAuthProvider } from './adapters/providers/index.js';
 
 // Types
 export type * from './types.js';

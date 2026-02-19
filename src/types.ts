@@ -190,7 +190,7 @@ export interface LoggingConfig {
 }
 
 export interface ProviderConfig {
-  type: 'anthropic' | 'openai' | 'google' | 'ollama' | 'custom';
+  type: 'anthropic' | 'anthropic-oauth' | 'openai' | 'google' | 'ollama' | 'custom';
   apiKey?: string;
   baseUrl?: string;
   adapter?: ProviderAdapter;

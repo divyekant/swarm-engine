@@ -1,5 +1,6 @@
 import type { ProviderAdapter, ProviderConfig } from '../../types.js';
 import { AnthropicProvider } from './anthropic.js';
+import { AnthropicOAuthProvider } from './anthropic-oauth.js';
 import { OpenAIProvider } from './openai.js';
 import { OllamaProvider } from './ollama.js';
 
@@ -12,6 +13,11 @@ export function createProvider(config: ProviderConfig): ProviderAdapter {
   if (config.type === 'anthropic') {
     if (!config.apiKey) throw new Error('Anthropic provider requires apiKey');
     return new AnthropicProvider(config.apiKey, config.baseUrl);
+  }
+
+  if (config.type === 'anthropic-oauth') {
+    if (!config.apiKey) throw new Error('Anthropic OAuth provider requires apiKey (OAuth token)');
+    return new AnthropicOAuthProvider(config.apiKey, config.baseUrl);
   }
 
   if (config.type === 'openai') {
@@ -31,5 +37,6 @@ export function createProvider(config: ProviderConfig): ProviderAdapter {
 }
 
 export { AnthropicProvider } from './anthropic.js';
+export { AnthropicOAuthProvider } from './anthropic-oauth.js';
 export { OpenAIProvider } from './openai.js';
 export { OllamaProvider } from './ollama.js';
