@@ -6,6 +6,11 @@ import { DAGGraph } from './graph.js';
 import { Scheduler } from './scheduler.js';
 import { evaluate } from '../agent/evaluator.js';
 
+export interface ExecutorLimits {
+  maxConcurrentAgents?: number;
+  maxSwarmDurationMs?: number;
+}
+
 /**
  * DAGExecutor orchestrates the execution of a full DAG.
  *
@@ -30,6 +35,8 @@ export class DAGExecutor {
   private readonly signal?: AbortSignal;
   private readonly provider?: ProviderAdapter;
   private readonly providers: Map<string, ProviderAdapter>;
+  private readonly limits: ExecutorLimits;
+  private readonly startTime: number;
 
   /** Nodes that are targets of conditional edges and haven't been resolved yet. */
   private readonly conditionallyBlocked: Set<string> = new Set();
@@ -43,6 +50,7 @@ export class DAGExecutor {
     signal?: AbortSignal,
     provider?: ProviderAdapter,
     providers?: Map<string, ProviderAdapter>,
+    limits?: ExecutorLimits,
   ) {
     this.graph = graph;
     this.runner = runner;
@@ -52,6 +60,8 @@ export class DAGExecutor {
     this.signal = signal;
     this.provider = provider;
     this.providers = providers ?? new Map();
+    this.limits = limits ?? {};
+    this.startTime = Date.now();
 
     // Pre-compute the set of nodes that are targets of conditional edges.
     // These nodes must not run until their conditional edge is evaluated.
@@ -86,10 +96,29 @@ export class DAGExecutor {
           return;
         }
 
+        // Check duration limit
+        if (this.limits.maxSwarmDurationMs) {
+          const elapsed = Date.now() - this.startTime;
+          if (elapsed >= this.limits.maxSwarmDurationMs) {
+            yield {
+              type: 'swarm_error',
+              message: `Swarm duration limit exceeded (${elapsed}ms >= ${this.limits.maxSwarmDurationMs}ms)`,
+              completedNodes: completedNodeIds,
+              partialCost: this.costTracker.getSwarmTotal(),
+            };
+            return;
+          }
+        }
+
         // Filter out conditionally blocked nodes from the ready set
-        const readyNodes = scheduler.getReadyNodes().filter(
+        let readyNodes = scheduler.getReadyNodes().filter(
           (n) => !this.conditionallyBlocked.has(n.id),
         );
+
+        // Cap concurrency
+        if (this.limits.maxConcurrentAgents && readyNodes.length > this.limits.maxConcurrentAgents) {
+          readyNodes = readyNodes.slice(0, this.limits.maxConcurrentAgents);
+        }
 
         if (readyNodes.length === 0) {
           // No nodes are ready and we're not done -- all remaining nodes
@@ -231,6 +260,16 @@ export class DAGExecutor {
           durationMs: Date.now() - startTime,
         });
 
+        // Check per-agent budget
+        const agentBudget = this.costTracker.checkAgentBudget(node.agent.id);
+        if (!agentBudget.ok) {
+          yield {
+            type: 'budget_exceeded',
+            used: agentBudget.used,
+            limit: this.costTracker.perAgentBudget!,
+          };
+        }
+
         // Evaluate conditional edges originating from this node
         yield* this.evaluateConditionalEdges(nodeId, lastDoneEvent.output, scheduler);
 
@@ -330,6 +369,16 @@ export class DAGExecutor {
             cost: lastDoneEvent.cost,
             durationMs: Date.now() - startTime,
           });
+
+          // Check per-agent budget
+          const agentBudget = this.costTracker.checkAgentBudget(node.agent.id);
+          if (!agentBudget.ok) {
+            events.push({
+              type: 'budget_exceeded',
+              used: agentBudget.used,
+              limit: this.costTracker.perAgentBudget!,
+            });
+          }
 
           // Evaluate conditional edges originating from this node
           for await (const routeEvent of this.evaluateConditionalEdges(

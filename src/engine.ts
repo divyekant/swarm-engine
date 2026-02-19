@@ -163,6 +163,10 @@ export class SwarmEngine {
       options.signal,
       defaultProvider,
       this.providers,
+      {
+        maxConcurrentAgents: this.config.limits?.maxConcurrentAgents,
+        maxSwarmDurationMs: this.config.limits?.maxSwarmDurationMs,
+      },
     );
 
     // 9. Yield all events from executor

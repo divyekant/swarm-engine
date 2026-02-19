@@ -800,6 +800,102 @@ describe('DAGExecutor', () => {
     });
   });
 
+  describe('limits enforcement', () => {
+    it('respects maxConcurrentAgents by limiting parallel batch size', async () => {
+      // 3 root nodes (all ready at once) but maxConcurrentAgents = 1
+      const dag = new DAGBuilder()
+        .agent('a', agent('a'))
+        .agent('b', agent('b'))
+        .agent('c', agent('c'))
+        .build();
+      const graph = new DAGGraph(dag);
+
+      let concurrentCount = 0;
+      let maxConcurrent = 0;
+
+      const runner = {
+        async *run(params: AgentRunParams): AsyncGenerator<SwarmEvent> {
+          concurrentCount++;
+          maxConcurrent = Math.max(maxConcurrent, concurrentCount);
+          const { nodeId, agent: agentDesc } = params;
+          yield { type: 'agent_start', nodeId, agentRole: agentDesc.role, agentName: agentDesc.name };
+          await new Promise(r => setTimeout(r, 10));
+          yield { type: 'agent_done', nodeId, agentRole: agentDesc.role, output: `out-${nodeId}`, cost: emptyCost() };
+          concurrentCount--;
+        },
+      } as AgentRunner;
+
+      const costTracker = new CostTracker();
+      const memory = new SwarmMemory();
+      const executor = new DAGExecutor(graph, runner, costTracker, memory, 'concurrency test', undefined, undefined, undefined, { maxConcurrentAgents: 1 });
+      const events = await collectEvents(executor.execute());
+
+      expect(maxConcurrent).toBeLessThanOrEqual(1);
+      const doneEvents = eventsOfType(events, 'swarm_done');
+      expect(doneEvents).toHaveLength(1);
+      expect(doneEvents[0].results).toHaveLength(3);
+    });
+
+    it('stops swarm when maxSwarmDurationMs exceeded', async () => {
+      const dag = new DAGBuilder()
+        .agent('a', agent('a'))
+        .agent('b', agent('b'))
+        .edge('a', 'b')
+        .build();
+      const graph = new DAGGraph(dag);
+
+      const runner = {
+        async *run(params: AgentRunParams): AsyncGenerator<SwarmEvent> {
+          const { nodeId, agent: agentDesc } = params;
+          yield { type: 'agent_start', nodeId, agentRole: agentDesc.role, agentName: agentDesc.name };
+          await new Promise(r => setTimeout(r, 100));
+          yield { type: 'agent_done', nodeId, agentRole: agentDesc.role, output: `out-${nodeId}`, cost: emptyCost() };
+        },
+      } as AgentRunner;
+
+      const costTracker = new CostTracker();
+      const memory = new SwarmMemory();
+      const executor = new DAGExecutor(graph, runner, costTracker, memory, 'duration test', undefined, undefined, undefined, { maxSwarmDurationMs: 50 });
+      const events = await collectEvents(executor.execute());
+
+      const errorEvents = eventsOfType(events, 'swarm_error');
+      expect(errorEvents.length).toBeGreaterThanOrEqual(1);
+      expect(errorEvents.some(e => e.message.includes('duration'))).toBe(true);
+    });
+
+    it('emits budget_exceeded when per-agent budget is exceeded', async () => {
+      const dag = new DAGBuilder()
+        .agent('a', agent('a'))
+        .agent('b', agent('b'))
+        .edge('a', 'b')
+        .build();
+      const graph = new DAGGraph(dag);
+
+      const costTracker = new CostTracker(null, 1); // perAgentBudget = 1 cent
+
+      const runner = {
+        async *run(params: AgentRunParams): AsyncGenerator<SwarmEvent> {
+          const { nodeId, agent: agentDesc } = params;
+          // Record 9 cents of usage — blows past per-agent 1 cent budget
+          costTracker.recordUsage(agentDesc.id, nodeId, {
+            inputTokens: 20000,
+            outputTokens: 4000,
+            model: 'gpt-4o',
+          });
+          yield { type: 'agent_start', nodeId, agentRole: agentDesc.role, agentName: agentDesc.name };
+          yield { type: 'agent_done', nodeId, agentRole: agentDesc.role, output: `out-${nodeId}`, cost: emptyCost() };
+        },
+      } as AgentRunner;
+
+      const memory = new SwarmMemory();
+      const executor = new DAGExecutor(graph, runner, costTracker, memory, 'agent budget test');
+      const events = await collectEvents(executor.execute());
+
+      const budgetEvents = eventsOfType(events, 'budget_exceeded');
+      expect(budgetEvents.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
   describe('per-node provider routing', () => {
     it('resolves provider from providers map when node has providerId', async () => {
       const nodeA = { ...agent('a'), providerId: 'fast' };
