@@ -48,7 +48,7 @@ export class AgentRunner {
     const startTime = Date.now();
 
     // Resolve provider: use agent's providerId if available, else default
-    const provider = (agent.providerId && this.providers.get(agent.providerId))
+    const provider = (agent.providerId ? this.providers.get(agent.providerId) : undefined)
       ?? this.defaultProvider;
 
     const node = new AgentNode(nodeId, agent);
