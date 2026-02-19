@@ -1,7 +1,7 @@
 {
   "name": "@swarmengine/core",
   "version": "0.1.0",
-  "description": "Multi-agent DAG orchestration engine with actor-style agents",
+  "description": "Multi-agent DAG orchestration engine with actor-style agents, cost tracking, and pluggable adapters",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -14,11 +14,39 @@
     "build": "tsup src/index.ts --format esm --dts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "multi-agent",
+    "dag",
+    "orchestration",
+    "llm",
+    "ai-agents",
+    "swarm",
+    "typescript",
+    "anthropic",
+    "openai",
+    "streaming"
+  ],
+  "author": "Divyekant Sushilkumar",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/divyekant/swarm-engine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/divyekant/swarm-engine/issues"
+  },
+  "homepage": "https://github.com/divyekant/swarm-engine#readme",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "type": "module",
   "devDependencies": {
     "@types/node": "^25.3.0",
