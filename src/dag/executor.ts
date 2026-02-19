@@ -230,6 +230,9 @@ export class DAGExecutor {
 
         // Evaluate conditional edges originating from this node
         yield* this.evaluateConditionalEdges(nodeId, lastDoneEvent.output, scheduler);
+
+        // Handle cycle edges originating from this node
+        yield* this.handleCycleEdges(nodeId, scheduler);
       } else {
         // No agent_done event was received -- treat as failure
         scheduler.markFailed(nodeId);
@@ -327,6 +330,11 @@ export class DAGExecutor {
             scheduler,
           )) {
             events.push(routeEvent);
+          }
+
+          // Handle cycle edges originating from this node
+          for await (const cycleEvent of this.handleCycleEdges(nodeId, scheduler)) {
+            events.push(cycleEvent);
           }
         } else {
           scheduler.markFailed(nodeId);
@@ -510,6 +518,40 @@ export class DAGExecutor {
             this.skipDownstream(targetNodeId, scheduler);
           }
         }
+      }
+    }
+  }
+
+  /**
+   * Handle cycle edges targeting a completed node.
+   *
+   * When a node completes, check its incoming edges for cycle edges (maxCycles set).
+   * For each cycle edge where this node is the target:
+   * 1. Increment the cycle count (tracks how many times this node has completed for this edge)
+   * 2. Emit a loop_iteration event for every iteration
+   * 3. If iteration < maxCycles: reset this node to 'pending' so it runs again
+   * 4. If iteration >= maxCycles: the node stays completed and downstream proceeds normally
+   */
+  private async *handleCycleEdges(
+    nodeId: string,
+    scheduler: Scheduler,
+  ): AsyncGenerator<SwarmEvent> {
+    const incoming = this.graph.getIncomingEdges(nodeId);
+
+    for (const edge of incoming) {
+      if (edge.maxCycles === undefined) continue;
+
+      const iteration = scheduler.incrementCycleCount(edge.from, edge.to);
+
+      yield {
+        type: 'loop_iteration',
+        nodeId,
+        iteration,
+        maxIterations: edge.maxCycles,
+      };
+
+      if (iteration < edge.maxCycles) {
+        scheduler.resetNodeForCycle(nodeId);
       }
     }
   }

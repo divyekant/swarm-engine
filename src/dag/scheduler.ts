@@ -13,11 +13,13 @@ export class Scheduler {
   private readonly graph: DAGGraph;
   private readonly maxConcurrent: number;
   private readonly statuses: Map<string, NodeStatus>;
+  private readonly cycleCounts: Map<string, number>;
 
   constructor(graph: DAGGraph, maxConcurrent: number = Infinity) {
     this.graph = graph;
     this.maxConcurrent = maxConcurrent;
     this.statuses = new Map();
+    this.cycleCounts = new Map();
 
     // Initialize all nodes as pending
     for (const node of graph.nodes) {
@@ -135,6 +137,27 @@ export class Scheduler {
     }
 
     return counts;
+  }
+
+  /** Increment and return the cycle count for a given edge (keyed by "from->to"). */
+  incrementCycleCount(from: string, to: string): number {
+    const key = `${from}->${to}`;
+    const current = this.cycleCounts.get(key) ?? 0;
+    const next = current + 1;
+    this.cycleCounts.set(key, next);
+    return next;
+  }
+
+  /** Get the current cycle count for a given edge (0 if not yet tracked). */
+  getCycleCount(from: string, to: string): number {
+    const key = `${from}->${to}`;
+    return this.cycleCounts.get(key) ?? 0;
+  }
+
+  /** Reset a completed or failed node back to 'pending' so it can be re-run in a cycle. */
+  resetNodeForCycle(nodeId: string): void {
+    this.assertNodeExists(nodeId);
+    this.statuses.set(nodeId, 'pending');
   }
 
   /** Count nodes with a specific status. */
