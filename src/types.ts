@@ -208,6 +208,7 @@ export interface PersistenceAdapter {
   createRun(params: CreateRunParams): Promise<string>;
   updateRun(runId: string, updates: Record<string, unknown>): Promise<void>;
   createArtifact(params: ArtifactRequest): Promise<string>;
+  saveMessage(threadId: string, role: string, content: string): Promise<void>;
   loadThreadHistory(threadId: string): Promise<Message[]>;
   logActivity(params: ActivityParams): Promise<void>;
 }
