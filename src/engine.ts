@@ -148,7 +148,7 @@ export class SwarmEngine {
     }
 
     // 6. Create agent runner
-    const runner = new AgentRunner(defaultProvider, assembler, costTracker);
+    const runner = new AgentRunner(defaultProvider, assembler, costTracker, this.providers);
 
     // 7. Create DAG graph
     const graph = new DAGGraph(options.dag);
@@ -162,6 +162,7 @@ export class SwarmEngine {
       options.task,
       options.signal,
       defaultProvider,
+      this.providers,
     );
 
     // 9. Yield all events from executor

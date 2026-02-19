@@ -29,6 +29,7 @@ export class DAGExecutor {
   private readonly task: string;
   private readonly signal?: AbortSignal;
   private readonly provider?: ProviderAdapter;
+  private readonly providers: Map<string, ProviderAdapter>;
 
   /** Nodes that are targets of conditional edges and haven't been resolved yet. */
   private readonly conditionallyBlocked: Set<string> = new Set();
@@ -41,6 +42,7 @@ export class DAGExecutor {
     task: string,
     signal?: AbortSignal,
     provider?: ProviderAdapter,
+    providers?: Map<string, ProviderAdapter>,
   ) {
     this.graph = graph;
     this.runner = runner;
@@ -49,6 +51,7 @@ export class DAGExecutor {
     this.task = task;
     this.signal = signal;
     this.provider = provider;
+    this.providers = providers ?? new Map();
 
     // Pre-compute the set of nodes that are targets of conditional edges.
     // These nodes must not run until their conditional edge is evaluated.
@@ -476,8 +479,13 @@ export class DAGExecutor {
     if (conditionalEdges.length === 0) return;
 
     for (const ce of conditionalEdges) {
+      // Resolve the evaluator's provider: use evaluator's providerId if available, else default
+      const evalProvider = (ce.evaluate.type === 'llm' && ce.evaluate.providerId)
+        ? (this.providers.get(ce.evaluate.providerId) ?? this.provider)
+        : this.provider;
+
       // Evaluate to get either a target label (from targets map) or a direct node ID
-      const evaluatorResult = await evaluate(ce.evaluate, output, this.provider);
+      const evaluatorResult = await evaluate(ce.evaluate, output, evalProvider);
 
       // The result could be a label key in the targets map or a direct node ID
       let selectedNodeId: string | undefined;

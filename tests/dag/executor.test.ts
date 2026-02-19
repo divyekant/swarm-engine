@@ -4,9 +4,11 @@ import { DAGGraph } from '../../src/dag/graph.js';
 import { DAGExecutor } from '../../src/dag/executor.js';
 import { CostTracker } from '../../src/cost/tracker.js';
 import { SwarmMemory } from '../../src/memory/index.js';
-import type { AgentRunner, AgentRunParams } from '../../src/agent/runner.js';
+import { AgentRunner } from '../../src/agent/runner.js';
+import type { AgentRunParams } from '../../src/agent/runner.js';
 import type { SwarmEvent, AgentDescriptor, CostSummary, ProviderAdapter } from '../../src/types.js';
-import type { ContextAssembler } from '../../src/context/assembler.js';
+import { ContextAssembler } from '../../src/context/assembler.js';
+import { NoopContextProvider, NoopMemoryProvider, NoopCodebaseProvider, NoopPersonaProvider } from '../../src/adapters/defaults.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -795,6 +797,111 @@ describe('DAGExecutor', () => {
       await collectEvents(executor.execute());
 
       expect(receivedSignal).toBe(controller.signal);
+    });
+  });
+
+  describe('per-node provider routing', () => {
+    it('resolves provider from providers map when node has providerId', async () => {
+      const nodeA = { ...agent('a'), providerId: 'fast' };
+      const nodeB = { ...agent('b'), providerId: 'cheap' };
+      const dag = new DAGBuilder()
+        .agent('a', nodeA)
+        .agent('b', nodeB)
+        .edge('a', 'b')
+        .build();
+      const graph = new DAGGraph(dag);
+
+      // Track which provider was used per node by capturing stream output
+      const receivedContent: Record<string, string> = {};
+
+      const fastProvider: ProviderAdapter = {
+        async *stream() { yield { type: 'chunk' as const, content: 'fast' }; yield { type: 'usage' as const, inputTokens: 10, outputTokens: 5 }; },
+        estimateCost: () => 1,
+        getModelLimits: () => ({ contextWindow: 999_999, maxOutput: 4096 }),
+      };
+      const cheapProvider: ProviderAdapter = {
+        async *stream() { yield { type: 'chunk' as const, content: 'cheap' }; yield { type: 'usage' as const, inputTokens: 10, outputTokens: 5 }; },
+        estimateCost: () => 0,
+        getModelLimits: () => ({ contextWindow: 111_111, maxOutput: 2048 }),
+      };
+      const defaultProvider: ProviderAdapter = {
+        async *stream() { yield { type: 'chunk' as const, content: 'default' }; yield { type: 'usage' as const, inputTokens: 10, outputTokens: 5 }; },
+        estimateCost: () => 0,
+        getModelLimits: () => ({ contextWindow: 500_000, maxOutput: 8192 }),
+      };
+
+      const providers = new Map<string, ProviderAdapter>();
+      providers.set('fast', fastProvider);
+      providers.set('cheap', cheapProvider);
+
+      const costTracker = new CostTracker();
+      const assembler = new ContextAssembler({
+        context: new NoopContextProvider(),
+        memory: new NoopMemoryProvider(),
+        codebase: new NoopCodebaseProvider(),
+        persona: new NoopPersonaProvider(),
+      });
+      const runner = new AgentRunner(defaultProvider, assembler, costTracker, providers);
+      const memory = new SwarmMemory();
+      const executor = new DAGExecutor(graph, runner, costTracker, memory, 'route task', undefined, defaultProvider, providers);
+      const events = await collectEvents(executor.execute());
+
+      // Collect chunk content per node
+      for (const event of events) {
+        if (event.type === 'agent_chunk') {
+          receivedContent[event.nodeId] = (receivedContent[event.nodeId] ?? '') + event.content;
+        }
+      }
+
+      // Node a has providerId 'fast' -> should use fastProvider -> content 'fast'
+      expect(receivedContent['a']).toBe('fast');
+      // Node b has providerId 'cheap' -> should use cheapProvider -> content 'cheap'
+      expect(receivedContent['b']).toBe('cheap');
+
+      const doneEvents = eventsOfType(events, 'swarm_done');
+      expect(doneEvents).toHaveLength(1);
+      expect(doneEvents[0].results).toHaveLength(2);
+    });
+
+    it('falls back to default provider when providerId is not in the map', async () => {
+      const nodeA = { ...agent('a'), providerId: 'nonexistent' };
+      const dag = new DAGBuilder()
+        .agent('a', nodeA)
+        .build();
+      const graph = new DAGGraph(dag);
+
+      const defaultProvider: ProviderAdapter = {
+        async *stream() { yield { type: 'chunk' as const, content: 'default' }; yield { type: 'usage' as const, inputTokens: 10, outputTokens: 5 }; },
+        estimateCost: () => 0,
+        getModelLimits: () => ({ contextWindow: 500_000, maxOutput: 8192 }),
+      };
+
+      const providers = new Map<string, ProviderAdapter>();
+
+      const costTracker = new CostTracker();
+      const assembler = new ContextAssembler({
+        context: new NoopContextProvider(),
+        memory: new NoopMemoryProvider(),
+        codebase: new NoopCodebaseProvider(),
+        persona: new NoopPersonaProvider(),
+      });
+      const runner = new AgentRunner(defaultProvider, assembler, costTracker, providers);
+      const memory = new SwarmMemory();
+      const executor = new DAGExecutor(graph, runner, costTracker, memory, 'fallback task', undefined, defaultProvider, providers);
+      const events = await collectEvents(executor.execute());
+
+      const receivedContent: Record<string, string> = {};
+      for (const event of events) {
+        if (event.type === 'agent_chunk') {
+          receivedContent[event.nodeId] = (receivedContent[event.nodeId] ?? '') + event.content;
+        }
+      }
+
+      // Should fall back to default provider since 'nonexistent' is not in the map
+      expect(receivedContent['a']).toBe('default');
+
+      const doneEvents = eventsOfType(events, 'swarm_done');
+      expect(doneEvents).toHaveLength(1);
     });
   });
 });

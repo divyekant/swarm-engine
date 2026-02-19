@@ -26,16 +26,19 @@ export interface AgentRunParams {
  * tracks costs, and yields SwarmEvents throughout the process.
  */
 export class AgentRunner {
-  private provider: ProviderAdapter;
+  private defaultProvider: ProviderAdapter;
+  private providers: Map<string, ProviderAdapter>;
   private assembler: ContextAssembler;
   private costTracker: CostTracker;
 
   constructor(
-    provider: ProviderAdapter,
+    defaultProvider: ProviderAdapter,
     assembler: ContextAssembler,
     costTracker: CostTracker,
+    providers?: Map<string, ProviderAdapter>,
   ) {
-    this.provider = provider;
+    this.defaultProvider = defaultProvider;
+    this.providers = providers ?? new Map();
     this.assembler = assembler;
     this.costTracker = costTracker;
   }
@@ -43,6 +46,10 @@ export class AgentRunner {
   async *run(params: AgentRunParams): AsyncGenerator<SwarmEvent> {
     const { nodeId, agent, task, memory, upstreamOutputs, signal } = params;
     const startTime = Date.now();
+
+    // Resolve provider: use agent's providerId if available, else default
+    const provider = (agent.providerId && this.providers.get(agent.providerId))
+      ?? this.defaultProvider;
 
     const node = new AgentNode(nodeId, agent);
     node.status = 'running';
@@ -57,7 +64,7 @@ export class AgentRunner {
 
     try {
       // 2. Assemble context
-      const modelLimits = this.provider.getModelLimits(agent.model ?? 'default');
+      const modelLimits = provider.getModelLimits(agent.model ?? 'default');
       const messages = await this.assembler.assemble({
         systemPrompt: agent.systemPrompt,
         task,
@@ -80,7 +87,7 @@ export class AgentRunner {
       while (continueLoop) {
         continueLoop = false;
 
-        const stream = this.provider.stream({
+        const stream = provider.stream({
           model: agent.model ?? 'default',
           messages: currentMessages,
           temperature: agent.temperature ?? 0.7,
