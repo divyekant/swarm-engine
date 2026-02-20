@@ -152,9 +152,10 @@ function makeCost(cents: number, calls = 1): CostSummary {
 }
 
 const DEMO_EVENTS: Array<{ delay: number; event: SwarmEvent }> = [
-  { delay: 0, event: { type: 'swarm_start', dagId: 'demo-product-team', nodeCount: 4 } },
+  // 7-node DAG: PM -> Architect -> [Developer, Designer, Security] -> QA -> Release
+  { delay: 0, event: { type: 'swarm_start', dagId: 'demo-product-team', nodeCount: 7 } },
 
-  // PM starts
+  // --- Layer 1: PM ---
   { delay: 800, event: { type: 'agent_start', nodeId: 'pm', agentRole: 'product-manager', agentName: 'Product Manager' } },
   { delay: 1200, event: { type: 'agent_chunk', nodeId: 'pm', agentRole: 'product-manager', content: 'Analyzing requirements and market research...' } },
   { delay: 2500, event: {
@@ -162,12 +163,10 @@ const DEMO_EVENTS: Array<{ delay: number; event: SwarmEvent }> = [
     output: 'PRD: Authentication system with OAuth2, MFA support, and social login integration. Target: 99.9% uptime SLA.',
     cost: makeCost(0.45),
   }},
-  { delay: 2600, event: { type: 'swarm_progress', completed: 1, total: 4, runningNodes: [] } },
+  { delay: 2600, event: { type: 'swarm_progress', completed: 1, total: 7, runningNodes: [] } },
 
-  // Route decision: PM -> Architect
+  // --- Layer 2: Architect ---
   { delay: 2800, event: { type: 'route_decision', fromNode: 'pm', toNode: 'architect', reason: 'PRD approved' } },
-
-  // Architect starts
   { delay: 3000, event: { type: 'agent_start', nodeId: 'architect', agentRole: 'architect', agentName: 'System Architect' } },
   { delay: 3500, event: { type: 'agent_chunk', nodeId: 'architect', agentRole: 'architect', content: 'Designing microservice architecture with event-driven auth flow...' } },
   { delay: 5000, event: {
@@ -175,39 +174,76 @@ const DEMO_EVENTS: Array<{ delay: number; event: SwarmEvent }> = [
     output: 'Architecture: Auth service (Go) + Token service (Rust) + Gateway (Node.js). Redis for session cache, PostgreSQL for user store.',
     cost: makeCost(0.82),
   }},
-  { delay: 5100, event: { type: 'swarm_progress', completed: 2, total: 4, runningNodes: [] } },
+  { delay: 5100, event: { type: 'swarm_progress', completed: 2, total: 7, runningNodes: [] } },
 
-  // Route decision: Architect -> Developer
-  { delay: 5300, event: { type: 'route_decision', fromNode: 'architect', toNode: 'developer', reason: 'Architecture approved' } },
+  // --- Layer 3: PARALLEL cluster — Developer + Designer + Security ---
+  { delay: 5300, event: { type: 'route_decision', fromNode: 'architect', toNode: 'developer', reason: 'Backend track' } },
+  { delay: 5300, event: { type: 'route_decision', fromNode: 'architect', toNode: 'designer', reason: 'Frontend track' } },
+  { delay: 5300, event: { type: 'route_decision', fromNode: 'architect', toNode: 'security', reason: 'Security track' } },
 
-  // Developer starts
+  // All three start near-simultaneously
   { delay: 5500, event: { type: 'agent_start', nodeId: 'developer', agentRole: 'developer', agentName: 'Senior Developer' } },
+  { delay: 5600, event: { type: 'agent_start', nodeId: 'designer', agentRole: 'designer', agentName: 'UI/UX Designer' } },
+  { delay: 5700, event: { type: 'agent_start', nodeId: 'security', agentRole: 'security-engineer', agentName: 'Security Engineer' } },
+
   { delay: 6000, event: { type: 'agent_chunk', nodeId: 'developer', agentRole: 'developer', content: 'Implementing OAuth2 flow with PKCE, setting up JWT signing...' } },
-  { delay: 7500, event: {
+  { delay: 6200, event: { type: 'agent_chunk', nodeId: 'designer', agentRole: 'designer', content: 'Designing login screens, MFA flow, social login buttons...' } },
+  { delay: 6400, event: { type: 'agent_chunk', nodeId: 'security', agentRole: 'security-engineer', content: 'Threat modeling, OWASP review, pen-test plan...' } },
+
+  // Designer finishes first
+  { delay: 7200, event: {
+    type: 'agent_done', nodeId: 'designer', agentRole: 'designer',
+    output: 'UI kit: Login page, MFA challenge screen, social auth buttons, error states. Figma handoff ready. Accessibility: WCAG 2.1 AA.',
+    cost: makeCost(0.38),
+  }},
+  { delay: 7300, event: { type: 'swarm_progress', completed: 3, total: 7, runningNodes: ['developer', 'security'] } },
+
+  // Security finishes next
+  { delay: 8000, event: {
+    type: 'agent_done', nodeId: 'security', agentRole: 'security-engineer',
+    output: 'Threat model complete. Recommendations: PKCE mandatory, token rotation every 15min, rate-limit login to 5/min/IP. No critical vulnerabilities in architecture.',
+    cost: makeCost(0.56),
+  }},
+  { delay: 8100, event: { type: 'swarm_progress', completed: 4, total: 7, runningNodes: ['developer'] } },
+
+  // Developer finishes last in the cluster
+  { delay: 9000, event: {
     type: 'agent_done', nodeId: 'developer', agentRole: 'developer',
     output: 'Implementation complete: OAuth2 + PKCE flow, JWT RS256 signing, refresh token rotation, rate limiting middleware. 94% test coverage.',
     cost: makeCost(1.23),
   }},
-  { delay: 7600, event: { type: 'swarm_progress', completed: 3, total: 4, runningNodes: [] } },
+  { delay: 9100, event: { type: 'swarm_progress', completed: 5, total: 7, runningNodes: [] } },
 
-  // Route decision: Developer -> QA
-  { delay: 7800, event: { type: 'route_decision', fromNode: 'developer', toNode: 'qa', reason: 'Implementation ready for testing' } },
+  // --- Layer 4: QA (waits for all three) ---
+  { delay: 9300, event: { type: 'route_decision', fromNode: 'developer', toNode: 'qa', reason: 'Implementation ready' } },
+  { delay: 9300, event: { type: 'route_decision', fromNode: 'designer', toNode: 'qa', reason: 'Designs delivered' } },
+  { delay: 9300, event: { type: 'route_decision', fromNode: 'security', toNode: 'qa', reason: 'Security cleared' } },
 
-  // QA starts
-  { delay: 8000, event: { type: 'agent_start', nodeId: 'qa', agentRole: 'qa-engineer', agentName: 'QA Engineer' } },
-  { delay: 8500, event: { type: 'agent_chunk', nodeId: 'qa', agentRole: 'qa-engineer', content: 'Running security audit, penetration testing, load testing...' } },
-  { delay: 10000, event: {
+  { delay: 9500, event: { type: 'agent_start', nodeId: 'qa', agentRole: 'qa-engineer', agentName: 'QA Engineer' } },
+  { delay: 10000, event: { type: 'agent_chunk', nodeId: 'qa', agentRole: 'qa-engineer', content: 'Integration testing, UI regression, security verification...' } },
+  { delay: 11500, event: {
     type: 'agent_done', nodeId: 'qa', agentRole: 'qa-engineer',
-    output: 'QA passed: No critical vulnerabilities. 47 test cases passed. Load test: 10K req/s sustained. Recommended: add CSRF protection to token endpoint.',
+    output: 'QA passed: 47 test cases, 0 critical bugs. Load test: 10K req/s. UI pixel-perfect vs designs. Security checklist verified.',
     cost: makeCost(0.31),
   }},
-  { delay: 10100, event: { type: 'swarm_progress', completed: 4, total: 4, runningNodes: [] } },
+  { delay: 11600, event: { type: 'swarm_progress', completed: 6, total: 7, runningNodes: [] } },
+
+  // --- Layer 5: Release Manager ---
+  { delay: 11800, event: { type: 'route_decision', fromNode: 'qa', toNode: 'release', reason: 'QA approved' } },
+  { delay: 12000, event: { type: 'agent_start', nodeId: 'release', agentRole: 'release-manager', agentName: 'Release Manager' } },
+  { delay: 12500, event: { type: 'agent_chunk', nodeId: 'release', agentRole: 'release-manager', content: 'Preparing release notes, deployment plan, rollback strategy...' } },
+  { delay: 13500, event: {
+    type: 'agent_done', nodeId: 'release', agentRole: 'release-manager',
+    output: 'Release v2.1.0 staged. Canary deploy to 5% traffic, full rollout in 24h. Rollback plan documented. Stakeholders notified.',
+    cost: makeCost(0.22),
+  }},
+  { delay: 13600, event: { type: 'swarm_progress', completed: 7, total: 7, runningNodes: [] } },
 
   // Swarm done
-  { delay: 10500, event: {
+  { delay: 14000, event: {
     type: 'swarm_done',
     results: [],
-    totalCost: makeCost(2.81, 4),
+    totalCost: makeCost(3.97, 7),
   }},
 ];
 
