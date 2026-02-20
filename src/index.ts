@@ -33,5 +33,9 @@ export { createProvider, AnthropicOAuthProvider } from './adapters/providers/ind
 export { PersonaSmithProvider } from './adapters/personas/personasmith.js';
 export { parsePersonaMarkdown } from './adapters/personas/parser.js';
 
+// Monitor
+export { SSEBridge, startMonitor, createMonitorServer } from './monitor/index.js';
+export type { MonitorState, MonitorHandle, MonitorOptions } from './monitor/index.js';
+
 // Types
 export type * from './types.js';
