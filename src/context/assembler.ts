@@ -70,15 +70,21 @@ export class ContextAssembler {
     // --- Priority 1: Persona ---
     const persona = await this.deps.persona.getPersona(agentId ?? 'default');
     if (persona) {
-      const personaBlock = [
-        `## Persona: ${persona.name}`,
-        `Role: ${persona.role}`,
-        `Traits: ${persona.traits.join(', ')}`,
-        `Constraints: ${persona.constraints.join(', ')}`,
-        persona.communicationStyle ? `Communication Style: ${persona.communicationStyle}` : '',
-        persona.expertise?.length ? `Expertise: ${persona.expertise.join(', ')}` : '',
-      ].filter(Boolean).join('\n');
-      budget.add('persona', personaBlock, 1);
+      if (persona.fullPrompt) {
+        // Full PersonaSmith Markdown — inject as-is for maximum fidelity
+        budget.add('persona', persona.fullPrompt, 1);
+      } else {
+        // Slim metadata — build structured block from fields
+        const personaBlock = [
+          `## Persona: ${persona.name}`,
+          `Role: ${persona.role}`,
+          `Traits: ${persona.traits.join(', ')}`,
+          `Constraints: ${persona.constraints.join(', ')}`,
+          persona.communicationStyle ? `Communication Style: ${persona.communicationStyle}` : '',
+          persona.expertise?.length ? `Expertise: ${persona.expertise.join(', ')}` : '',
+        ].filter(Boolean).join('\n');
+        budget.add('persona', personaBlock, 1);
+      }
     }
 
     // --- Priority 1: System prompt ---
