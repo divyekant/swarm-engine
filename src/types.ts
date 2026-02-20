@@ -19,6 +19,10 @@ export interface PersonaConfig {
   constraints: string[];
   communicationStyle?: string;
   expertise?: string[];
+  fullPrompt?: string;
+  department?: string;
+  seniority?: string;
+  collaborationMap?: string;
 }
 
 // --- Message Types ---
