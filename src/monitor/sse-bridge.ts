@@ -54,6 +54,10 @@ export class SSEBridge {
       'Access-Control-Allow-Origin': '*',
     });
 
+    // Flush headers immediately with an SSE comment so the client
+    // receives the response and can start listening for data events.
+    res.write(': connected\n\n');
+
     this.clients.add(res);
     res.on('close', () => {
       this.clients.delete(res);
