@@ -29,5 +29,9 @@ export {
 // Provider factory + providers
 export { createProvider, AnthropicOAuthProvider } from './adapters/providers/index.js';
 
+// Persona adapters
+export { PersonaSmithProvider } from './adapters/personas/personasmith.js';
+export { parsePersonaMarkdown } from './adapters/personas/parser.js';
+
 // Types
 export type * from './types.js';
