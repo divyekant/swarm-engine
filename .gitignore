@@ -4,3 +4,4 @@ dist/
 .env.*
 docs/plans/
 *.tgz
+.worktrees/
