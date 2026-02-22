@@ -1,3 +1,7 @@
+import type { AgenticAdapter, AgenticOptions } from './adapters/agentic/types.js';
+
+export type { AgenticAdapter, AgenticOptions, AgenticRunParams, AgenticEvent, AgenticTool } from './adapters/agentic/types.js';
+
 // --- Agent Types ---
 
 export interface AgentDescriptor {
@@ -10,6 +14,7 @@ export interface AgentDescriptor {
   maxTokens?: number;
   providerId?: string;
   persona?: PersonaConfig;
+  agentic?: AgenticOptions;
 }
 
 export interface PersonaConfig {
@@ -193,10 +198,11 @@ export interface LoggingConfig {
 }
 
 export interface ProviderConfig {
-  type: 'anthropic' | 'anthropic-oauth' | 'openai' | 'google' | 'ollama' | 'custom';
+  type: 'anthropic' | 'anthropic-oauth' | 'openai' | 'google' | 'ollama' | 'custom' | 'claude-code' | 'codex' | 'custom-agentic';
   apiKey?: string;
   baseUrl?: string;
   adapter?: ProviderAdapter;
+  agenticAdapter?: AgenticAdapter;
 }
 
 // --- Adapter Interfaces ---
