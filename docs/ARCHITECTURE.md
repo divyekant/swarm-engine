@@ -28,8 +28,8 @@ SwarmEngine orchestrates multi-agent AI workflows using directed acyclic graphs 
 │            ┌──────────┼──────────┐                       │
 │            ▼          ▼          ▼                        │
 │     ┌───────────┐┌──────────┐┌──────────┐               │
-│     │ AgentNode ││AgentNode ││AgentNode │  (concurrent)  │
-│     │ (actor)   ││(actor)   ││(actor)   │               │
+│     │ AgentNode ││AgentNode ││ Agentic  │  (concurrent)  │
+│     │ (LLM)    ││(LLM)    ││ (CC/Cdx) │               │
 │     └─────┬─────┘└────┬─────┘└────┬─────┘               │
 │           │            │           │                     │
 │     ┌─────▼────────────▼───────────▼─────┐               │
@@ -62,7 +62,8 @@ SwarmEngine orchestrates multi-agent AI workflows using directed acyclic graphs 
 │   │   ├── scheduler.ts       — Determines ready nodes, respects maxConcurrentAgents
 │   │   └── validator.ts       — Pre-execution validation
 │   ├── agent/
-│   │   ├── runner.ts          — Single agent execution: context → LLM → streaming
+│   │   ├── runner.ts          — LLM agent execution: context → LLM → streaming
+│   │   ├── agentic-runner.ts  — Agentic backend execution: task → CC/Codex → streaming
 │   │   ├── node.ts            — AgentNode: actor wrapper (inbox, outbox, state)
 │   │   └── evaluator.ts       — Output evaluation for conditional routing
 │   ├── memory/
@@ -79,7 +80,8 @@ SwarmEngine orchestrates multi-agent AI workflows using directed acyclic graphs 
 │   │   └── tracker.ts         — Token usage & cost attribution + budget enforcement
 │   ├── adapters/
 │   │   ├── defaults.ts        — In-memory & noop adapter implementations
-│   │   └── providers/         — LLM provider adapters (Anthropic, OpenAI, Ollama)
+│   │   ├── providers/         — LLM provider adapters (Anthropic, OpenAI, Ollama)
+│   │   └── agentic/           — Agentic backend adapters (Claude Code, Codex, custom)
 │   └── errors/
 │       └── classification.ts  — Error types and classification logic
 └── tests/                     — Unit + integration tests (vitest)
@@ -171,12 +173,35 @@ Seven pluggable boundaries. All optional except ProviderAdapter (which ships wit
 | Adapter | Purpose | Default |
 |---------|---------|---------|
 | `ProviderAdapter` | LLM streaming | Anthropic, OpenAI, Ollama built-in |
+| `AgenticAdapter` | Full agentic execution | Claude Code, Codex (optional SDKs) |
 | `PersistenceAdapter` | Run/artifact/thread storage | In-memory (100 run LRU) |
 | `ContextProvider` | Entity context retrieval | Noop |
 | `MemoryProvider` | Semantic search & storage | Noop |
 | `CodebaseProvider` | Code querying (tiered) | Noop |
 | `PersonaProvider` | Agent persona retrieval | Falls back to systemPrompt |
 | `LifecycleHooks` | Execution callbacks | Noop |
+
+## Agentic Backends
+
+Standard LLM agents are "thinkers" — they process context and produce text. Agentic nodes are "doers" — they spawn full agentic platforms (Claude Code, Codex) that can read/write files, execute commands, and spawn their own sub-agents.
+
+**Two runners, one scheduler:**
+
+```
+DAGExecutor
+├── AgentRunner      — LLM nodes: context assembly → LLM stream → tool loop
+└── AgenticRunner    — Agentic nodes: task + context → CC/Codex → event mapping
+```
+
+The executor checks if a node's `providerId` maps to an agentic adapter. If yes, it routes to `AgenticRunner`; otherwise, `AgentRunner`. Both produce identical `SwarmEvent` streams and `NodeResult` objects.
+
+**Inter-agent communication:** Agentic nodes get 4 MCP tools injected into their session:
+- `send_message` — point-to-point messaging to other agents
+- `scratchpad_set` / `scratchpad_read` / `scratchpad_append` — shared blackboard access
+
+**Cost rollup:** Agentic backends report their own cost. The runner records it in `CostTracker` so budget enforcement works uniformly across both runner types.
+
+**SDKs are optional:** Both `@anthropic-ai/claude-agent-sdk` and `@openai/codex-sdk` are `optionalDependencies`. The factory uses lazy loading — the SDK import happens on first `run()` call, not at engine construction time.
 
 ## SwarmMemory
 

@@ -306,6 +306,124 @@ for await (const event of engine.run({ dag, task: 'Build a full-stack app' })) {
 }
 ```
 
+## Agentic Backends
+
+Standard LLM agents can think and plan, but they can't actually *do* things — no file I/O, no shell access, no sub-agent spawning. Agentic backends solve this by delegating nodes to full agentic platforms like Claude Code or Codex.
+
+### Setup
+
+```bash
+# Install the SDK you need (both optional)
+npm install @anthropic-ai/claude-agent-sdk   # for Claude Code nodes
+npm install @openai/codex-sdk                # for Codex nodes
+```
+
+### Claude Code Node
+
+```typescript
+const engine = new SwarmEngine({
+  providers: {
+    anthropic: { type: 'anthropic', apiKey: process.env.ANTHROPIC_API_KEY },
+    coder: { type: 'claude-code' },
+  },
+  defaults: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
+});
+
+const dag = engine.dag()
+  .agent('planner', {
+    id: 'planner', name: 'Planner', role: 'planner',
+    systemPrompt: 'Break the task into implementation steps.',
+  })
+  .agent('coder', {
+    id: 'coder', name: 'Coder', role: 'coder',
+    systemPrompt: 'Implement the plan. Write code to files.',
+    providerId: 'coder',
+    agentic: {
+      permissionMode: 'bypassPermissions',
+      cwd: '/tmp/workspace',
+      maxTurns: 15,
+      maxBudgetUsd: 0.50,
+      allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+    },
+  })
+  .edge('planner', 'coder')
+  .build();
+```
+
+### Codex Node
+
+```typescript
+const engine = new SwarmEngine({
+  providers: {
+    codex: { type: 'codex' },
+  },
+});
+
+const dag = engine.dag()
+  .agent('implementer', {
+    id: 'implementer', name: 'Implementer', role: 'coder',
+    systemPrompt: 'Implement the task.',
+    providerId: 'codex',
+    agentic: {
+      cwd: '/tmp/workspace',
+    },
+  })
+  .build();
+```
+
+### Custom Agentic Backend
+
+Implement the `AgenticAdapter` interface to use any agentic platform:
+
+```typescript
+import type { AgenticAdapter, AgenticRunParams, AgenticEvent } from '@swarmengine/core';
+
+const myAdapter: AgenticAdapter = {
+  async *run(params: AgenticRunParams): AsyncGenerator<AgenticEvent> {
+    // Call your agentic platform
+    yield { type: 'chunk', content: 'Working on it...' };
+    yield {
+      type: 'result',
+      output: 'Task completed',
+      costUsd: 0.05,
+      inputTokens: 500,
+      outputTokens: 200,
+    };
+  },
+};
+
+const engine = new SwarmEngine({
+  providers: {
+    myAgent: { type: 'custom-agentic', agenticAdapter: myAdapter },
+  },
+});
+```
+
+### Mixed DAGs
+
+Agentic and LLM nodes can be freely mixed in the same DAG. The executor routes each node to the right runner automatically:
+
+```typescript
+const engine = new SwarmEngine({
+  providers: {
+    anthropic: { type: 'anthropic', apiKey: process.env.ANTHROPIC_API_KEY },
+    coder: { type: 'claude-code' },
+  },
+  defaults: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
+});
+
+// LLM planner → CC coder → LLM reviewer
+const dag = engine.dag()
+  .agent('planner', { ...planner })
+  .agent('coder', { ...coder, providerId: 'coder', agentic: { ... } })
+  .agent('reviewer', { ...reviewer })
+  .edge('planner', 'coder')
+  .edge('coder', 'reviewer')
+  .build();
+```
+
+All nodes emit the same `SwarmEvent` types — your event handlers work unchanged regardless of whether a node is LLM or agentic.
+
 ## Cancellation
 
 ```typescript
@@ -490,6 +608,12 @@ import type {
   TokenUsage,
   ArtifactRequest,
   Evaluator,
+  // Agentic types
+  AgenticAdapter,
+  AgenticEvent,
+  AgenticRunParams,
+  AgenticOptions,
+  AgenticTool,
 } from '@swarmengine/core';
 ```
 

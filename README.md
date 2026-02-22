@@ -7,6 +7,7 @@ Multi-agent DAG orchestration engine for TypeScript. Define agents as nodes, wir
 - **5 execution patterns** — sequential pipelines, parallel fan-out/fan-in, conditional routing, iterative loops, dynamic planning
 - **Actor-style agents** — each node has inbox, outbox, and shared scratchpad
 - **LLM providers** — Anthropic, OpenAI, Ollama, and custom adapters
+- **Agentic backends** — optional Claude Code and Codex integration for nodes that need real tools (file I/O, shell, web)
 - **Cost tracking** — per-agent and per-swarm token usage with budget enforcement
 - **Streaming events** — real-time `AsyncGenerator` events for UI and logging
 - **Pluggable adapters** — persistence, memory, context, codebase, persona, lifecycle hooks
@@ -231,6 +232,50 @@ for await (const event of engine.run({ dag, task: '...', signal: controller.sign
   }
 }
 ```
+
+## Agentic Backends (Optional)
+
+Mix standard LLM agents with full agentic platforms. Agentic nodes can read/write files, execute shell commands, and spawn sub-agents — they're "doers" not just "thinkers".
+
+```bash
+# Install the SDK you need (both are optional)
+npm install @anthropic-ai/claude-agent-sdk   # Claude Code
+npm install @openai/codex-sdk                # Codex
+```
+
+```ts
+const engine = new SwarmEngine({
+  providers: {
+    planner: { type: 'anthropic', apiKey: process.env.ANTHROPIC_API_KEY },
+    coder: { type: 'claude-code' },   // agentic — spawns a real CC instance
+  },
+  defaults: { provider: 'planner', model: 'claude-sonnet-4-5-20250929' },
+});
+
+const dag = engine.dag()
+  .agent('planner', {
+    id: 'planner', name: 'Planner', role: 'planner',
+    systemPrompt: 'Break the task into steps.',
+  })
+  .agent('coder', {
+    id: 'coder', name: 'Coder', role: 'coder',
+    systemPrompt: 'Implement the plan.',
+    providerId: 'coder',
+    agentic: {
+      permissionMode: 'bypassPermissions',
+      cwd: '/tmp/workspace',
+      maxTurns: 15,
+      maxBudgetUsd: 0.50,
+      allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+    },
+  })
+  .edge('planner', 'coder')
+  .build();
+```
+
+Agentic nodes emit the same `SwarmEvent` types as LLM nodes — your event handlers work unchanged. Costs from agentic backends roll up into the swarm's cost tracker.
+
+You can also bring your own agentic backend via `type: 'custom-agentic'` with an `AgenticAdapter` implementation.
 
 ## Custom Provider
 
