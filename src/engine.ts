@@ -4,15 +4,18 @@ import type {
   SwarmEvent,
   ProviderAdapter,
 } from './types.js';
+import type { AgenticAdapter } from './adapters/agentic/types.js';
 import { DAGBuilder } from './dag/builder.js';
 import { DAGGraph } from './dag/graph.js';
 import { DAGExecutor } from './dag/executor.js';
 import { AgentRunner } from './agent/runner.js';
+import { AgenticRunner } from './agent/agentic-runner.js';
 import { CostTracker } from './cost/tracker.js';
 import { SwarmMemory } from './memory/index.js';
 import { ContextAssembler } from './context/assembler.js';
 import { validateDAG } from './dag/validator.js';
 import { createProvider } from './adapters/providers/index.js';
+import { isAgenticProvider, createAgenticAdapter } from './adapters/agentic/index.js';
 import {
   InMemoryPersistence,
   NoopContextProvider,
@@ -45,6 +48,7 @@ import {
 export class SwarmEngine {
   private readonly config: SwarmEngineConfig;
   private readonly providers: Map<string, ProviderAdapter>;
+  private readonly agenticAdapters: Map<string, AgenticAdapter>;
   private readonly persistence;
   private readonly context;
   private readonly memory;
@@ -54,10 +58,15 @@ export class SwarmEngine {
   constructor(config: SwarmEngineConfig) {
     this.config = config;
 
-    // Initialize providers map
+    // Initialize providers map — split standard vs agentic
     this.providers = new Map();
+    this.agenticAdapters = new Map();
     for (const [name, providerConfig] of Object.entries(config.providers)) {
-      this.providers.set(name, createProvider(providerConfig));
+      if (isAgenticProvider(providerConfig.type)) {
+        this.agenticAdapters.set(name, createAgenticAdapter(providerConfig));
+      } else {
+        this.providers.set(name, createProvider(providerConfig));
+      }
     }
 
     // Store adapter instances with noop defaults
@@ -79,8 +88,11 @@ export class SwarmEngine {
    * Validates and executes a DAG, yielding SwarmEvents throughout the process.
    */
   async *run(options: RunOptions): AsyncGenerator<SwarmEvent> {
-    // 1. Validate the DAG
-    const validation = validateDAG(options.dag, { providers: this.config.providers });
+    // 1. Validate the DAG — merge both maps so agentic provider references pass validation
+    const allProviderKeys: Record<string, unknown> = {};
+    for (const [k, v] of this.providers) allProviderKeys[k] = v;
+    for (const [k, v] of this.agenticAdapters) allProviderKeys[k] = v;
+    const validation = validateDAG(options.dag, { providers: allProviderKeys });
     if (!validation.valid) {
       yield {
         type: 'swarm_error',
@@ -150,6 +162,11 @@ export class SwarmEngine {
     // 6. Create agent runner
     const runner = new AgentRunner(defaultProvider, assembler, costTracker, this.providers);
 
+    // 6b. Create agentic runner if agentic adapters exist
+    const agenticRunner = this.agenticAdapters.size > 0
+      ? new AgenticRunner(costTracker)
+      : undefined;
+
     // 7. Create DAG graph
     const graph = new DAGGraph(options.dag);
 
@@ -167,6 +184,8 @@ export class SwarmEngine {
         maxConcurrentAgents: this.config.limits?.maxConcurrentAgents,
         maxSwarmDurationMs: this.config.limits?.maxSwarmDurationMs,
       },
+      agenticRunner,
+      this.agenticAdapters,
     );
 
     // 9. Yield all events from executor

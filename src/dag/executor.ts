@@ -7,7 +7,6 @@ import type { SwarmMemory } from '../memory/index.js';
 import { DAGGraph } from './graph.js';
 import { Scheduler } from './scheduler.js';
 import { evaluate } from '../agent/evaluator.js';
-import { isAgenticProvider } from '../adapters/agentic/index.js';
 
 export interface ExecutorLimits {
   maxConcurrentAgents?: number;
@@ -212,7 +211,6 @@ export class DAGExecutor {
   private isAgenticNode(nodeId: string): { isAgentic: boolean; adapter?: AgenticAdapter } {
     const node = this.graph.getNode(nodeId);
     if (!node?.agent.providerId) return { isAgentic: false };
-    if (!isAgenticProvider(node.agent.providerId)) return { isAgentic: false };
     const adapter = this.agenticAdapters.get(node.agent.providerId);
     if (!adapter) return { isAgentic: false };
     return { isAgentic: true, adapter };
