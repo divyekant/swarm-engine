@@ -37,5 +37,16 @@ export { parsePersonaMarkdown } from './adapters/personas/parser.js';
 export { SSEBridge, startMonitor, createMonitorServer } from './monitor/index.js';
 export type { MonitorState, MonitorHandle, MonitorOptions } from './monitor/index.js';
 
+// Agentic adapters
+export { isAgenticProvider, createAgenticAdapter } from './adapters/agentic/index.js';
+export { AgenticRunner } from './agent/agentic-runner.js';
+export type {
+  AgenticAdapter,
+  AgenticEvent,
+  AgenticRunParams,
+  AgenticOptions,
+  AgenticTool,
+} from './adapters/agentic/types.js';
+
 // Types
 export type * from './types.js';
