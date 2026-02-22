@@ -1,10 +1,13 @@
 import type { SwarmEvent, NodeResult, CostSummary, ProviderAdapter } from '../types.js';
 import type { AgentRunner } from '../agent/runner.js';
+import type { AgenticRunner } from '../agent/agentic-runner.js';
+import type { AgenticAdapter } from '../adapters/agentic/types.js';
 import type { CostTracker } from '../cost/tracker.js';
 import type { SwarmMemory } from '../memory/index.js';
 import { DAGGraph } from './graph.js';
 import { Scheduler } from './scheduler.js';
 import { evaluate } from '../agent/evaluator.js';
+import { isAgenticProvider } from '../adapters/agentic/index.js';
 
 export interface ExecutorLimits {
   maxConcurrentAgents?: number;
@@ -36,6 +39,8 @@ export class DAGExecutor {
   private readonly provider?: ProviderAdapter;
   private readonly providers: Map<string, ProviderAdapter>;
   private readonly limits: ExecutorLimits;
+  private readonly agenticRunner?: AgenticRunner;
+  private readonly agenticAdapters: Map<string, AgenticAdapter>;
   private readonly startTime: number;
 
   /** Nodes that are targets of conditional edges and haven't been resolved yet. */
@@ -51,6 +56,8 @@ export class DAGExecutor {
     provider?: ProviderAdapter,
     providers?: Map<string, ProviderAdapter>,
     limits?: ExecutorLimits,
+    agenticRunner?: AgenticRunner,
+    agenticAdapters?: Map<string, AgenticAdapter>,
   ) {
     this.graph = graph;
     this.runner = runner;
@@ -61,6 +68,8 @@ export class DAGExecutor {
     this.provider = provider;
     this.providers = providers ?? new Map();
     this.limits = limits ?? {};
+    this.agenticRunner = agenticRunner;
+    this.agenticAdapters = agenticAdapters ?? new Map();
     this.startTime = Date.now();
 
     // Pre-compute the set of nodes that are targets of conditional edges.
@@ -197,6 +206,19 @@ export class DAGExecutor {
   }
 
   /**
+   * Check if a node should be routed to the agentic runner.
+   * Returns true only if the node's provider is agentic AND a matching adapter exists.
+   */
+  private isAgenticNode(nodeId: string): { isAgentic: boolean; adapter?: AgenticAdapter } {
+    const node = this.graph.getNode(nodeId);
+    if (!node?.agent.providerId) return { isAgentic: false };
+    if (!isAgenticProvider(node.agent.providerId)) return { isAgentic: false };
+    const adapter = this.agenticAdapters.get(node.agent.providerId);
+    if (!adapter) return { isAgentic: false };
+    return { isAgentic: true, adapter };
+  }
+
+  /**
    * Run a single node, yielding all events from the AgentRunner.
    * Updates scheduler status and collects results.
    */
@@ -221,14 +243,27 @@ export class DAGExecutor {
     try {
       let lastDoneEvent: Extract<SwarmEvent, { type: 'agent_done' }> | null = null;
 
-      for await (const event of this.runner.run({
-        nodeId,
-        agent: node.agent,
-        task: node.task ?? this.task,
-        memory: this.memory,
-        upstreamOutputs,
-        signal: this.signal,
-      })) {
+      const agenticCheck = this.isAgenticNode(nodeId);
+      const eventSource = agenticCheck.isAgentic && this.agenticRunner
+        ? this.agenticRunner.run({
+            nodeId,
+            agent: node.agent,
+            task: node.task ?? this.task,
+            adapter: agenticCheck.adapter!,
+            memory: this.memory,
+            upstreamOutputs,
+            signal: this.signal,
+          })
+        : this.runner.run({
+            nodeId,
+            agent: node.agent,
+            task: node.task ?? this.task,
+            memory: this.memory,
+            upstreamOutputs,
+            signal: this.signal,
+          });
+
+      for await (const event of eventSource) {
         yield event;
 
         if (event.type === 'agent_done') {
@@ -333,14 +368,27 @@ export class DAGExecutor {
       try {
         let lastDoneEvent: Extract<SwarmEvent, { type: 'agent_done' }> | null = null;
 
-        for await (const event of this.runner.run({
-          nodeId,
-          agent: node.agent,
-          task: node.task ?? this.task,
-          memory: this.memory,
-          upstreamOutputs,
-          signal: this.signal,
-        })) {
+        const agenticCheck = this.isAgenticNode(nodeId);
+        const eventSource = agenticCheck.isAgentic && this.agenticRunner
+          ? this.agenticRunner.run({
+              nodeId,
+              agent: node.agent,
+              task: node.task ?? this.task,
+              adapter: agenticCheck.adapter!,
+              memory: this.memory,
+              upstreamOutputs,
+              signal: this.signal,
+            })
+          : this.runner.run({
+              nodeId,
+              agent: node.agent,
+              task: node.task ?? this.task,
+              memory: this.memory,
+              upstreamOutputs,
+              signal: this.signal,
+            });
+
+        for await (const event of eventSource) {
           events.push(event);
 
           if (event.type === 'agent_done') {
