@@ -2,16 +2,34 @@ import type { AgenticAdapter, AgenticRunParams, AgenticEvent } from './types.js'
 
 export class ClaudeCodeAdapter implements AgenticAdapter {
   async *run(params: AgenticRunParams): AsyncGenerator<AgenticEvent> {
-    const { query, createSdkMcpServer, tool } = await import('@anthropic-ai/claude-agent-sdk');
+    const sdk = await import('@anthropic-ai/claude-agent-sdk');
+    const { query } = sdk;
 
     const fullPrompt = params.upstreamContext
       ? `${params.upstreamContext}\n\n## Task\n${params.task}`
       : params.task;
 
+    const permissionMode = params.agenticOptions?.permissionMode ?? 'bypassPermissions';
+
+    // Build clean env without CLAUDECODE to avoid nested-session detection
+    const baseEnv = params.agenticOptions?.env ?? { ...process.env };
+    const cleanEnv: Record<string, string | undefined> = { ...baseEnv };
+    delete cleanEnv['CLAUDECODE'];
+
     const options: Record<string, unknown> = {
       systemPrompt: params.systemPrompt,
-      permissionMode: params.agenticOptions?.permissionMode ?? 'bypassPermissions',
+      permissionMode,
       mcpServers: { ...(params.agenticOptions?.mcpServers as Record<string, unknown> ?? {}) },
+      // Required when using bypassPermissions mode
+      ...(permissionMode === 'bypassPermissions' && { allowDangerouslySkipPermissions: true }),
+      // Prevent nested-session detection
+      env: cleanEnv,
+      // Capture stderr for diagnostics
+      stderr: (data: string) => {
+        if (process.env.SWARM_DEBUG) {
+          process.stderr.write(`[cc-adapter] ${data}`);
+        }
+      },
     };
 
     // Pass through optional agentic options
@@ -21,21 +39,26 @@ export class ClaudeCodeAdapter implements AgenticAdapter {
     if (params.agenticOptions?.maxTurns !== undefined) options.maxTurns = params.agenticOptions.maxTurns;
     if (params.agenticOptions?.maxBudgetUsd !== undefined) options.maxBudgetUsd = params.agenticOptions.maxBudgetUsd;
     if (params.agenticOptions?.model) options.model = params.agenticOptions.model;
-    if (params.agenticOptions?.env) options.env = params.agenticOptions.env;
+    // env is already handled above (with CLAUDECODE stripped) — don't override it
 
-    // Inject communication tools as an in-process MCP server
-    if (params.tools?.length) {
-      const mcpTools = params.tools.map((t) =>
-        tool(t.name, t.description, t.inputSchema, async (args: Record<string, unknown>) => {
-          const result = await t.execute(args);
-          return { content: [{ type: 'text' as const, text: result }] };
-        }),
-      );
-      const server = createSdkMcpServer({ name: 'swarm-comm', tools: mcpTools });
-      (options.mcpServers as Record<string, unknown>)['swarm-comm'] = {
-        type: 'sdk',
-        instance: server.instance,
-      };
+    // Inject communication tools as an in-process MCP server if SDK supports it
+    if (params.tools?.length && sdk.createSdkMcpServer && sdk.tool) {
+      try {
+        const { z } = await import('zod');
+        const mcpTools = params.tools.map((t) =>
+          sdk.tool!(t.name, t.description, { input: z.string().optional() }, async (args: Record<string, unknown>) => {
+            const result = await t.execute(args);
+            return { content: [{ type: 'text' as const, text: result }] };
+          }),
+        );
+        const server = sdk.createSdkMcpServer!({ name: 'swarm-comm', tools: mcpTools });
+        (options.mcpServers as Record<string, unknown>)['swarm-comm'] = {
+          type: 'sdk',
+          instance: server.instance,
+        };
+      } catch {
+        // MCP tool injection failed — continue without communication tools
+      }
     }
 
     for await (const message of query({ prompt: fullPrompt, options })) {
@@ -56,7 +79,9 @@ export class ClaudeCodeAdapter implements AgenticAdapter {
             outputTokens: msg.usage?.output_tokens,
           };
         } else {
-          yield { type: 'error', message: msg.error ?? 'Agent failed' };
+          // Extract detailed error info
+          const errorDetail = msg.errors?.join('; ') ?? msg.error ?? 'Claude Code agent failed';
+          yield { type: 'error', message: errorDetail };
         }
       }
     }

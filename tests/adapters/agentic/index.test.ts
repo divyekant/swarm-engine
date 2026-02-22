@@ -31,10 +31,17 @@ describe('createAgenticAdapter', () => {
   it('throws for custom-agentic without adapter', () => {
     expect(() => createAgenticAdapter({ type: 'custom-agentic' })).toThrow('Custom agentic provider requires agenticAdapter');
   });
-  it('throws helpful error for claude-code when SDK not installed', () => {
-    expect(() => createAgenticAdapter({ type: 'claude-code' })).toThrow(/claude-agent-sdk.*not installed/i);
+  it('returns a lazy adapter for claude-code when SDK is installed', () => {
+    const adapter = createAgenticAdapter({ type: 'claude-code' });
+    expect(adapter).toBeDefined();
+    expect(typeof adapter.run).toBe('function');
   });
-  it('throws helpful error for codex when SDK not installed', () => {
-    expect(() => createAgenticAdapter({ type: 'codex' })).toThrow(/codex-sdk.*not installed/i);
+  it('returns a lazy adapter for codex when SDK is installed', () => {
+    const adapter = createAgenticAdapter({ type: 'codex' });
+    expect(adapter).toBeDefined();
+    expect(typeof adapter.run).toBe('function');
+  });
+  it('throws for unknown provider type', () => {
+    expect(() => createAgenticAdapter({ type: 'unknown' as any })).toThrow('Unknown agentic provider type');
   });
 });
