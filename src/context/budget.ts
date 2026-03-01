@@ -65,6 +65,10 @@ export class TokenBudget {
       .join('\n\n');
   }
 
+  getSectionCount(): number {
+    return this.segments.length;
+  }
+
   private estimateTokens(text: string): number {
     return Math.ceil(text.length / 4);
   }

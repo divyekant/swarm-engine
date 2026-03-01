@@ -160,7 +160,7 @@ export class ContextAssembler {
 
     // Build system message content
     const systemContent = budget.build();
-    this.logger.debug('Context assembled', { totalChars: systemContent.length });
+    this.logger.debug('Context assembled', { sections: budget.getSectionCount(), totalChars: systemContent.length });
 
     const messages: Message[] = [];
 

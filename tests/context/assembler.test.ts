@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ContextAssembler } from '../../src/context/assembler.js';
 import { NoopContextProvider, NoopMemoryProvider, NoopCodebaseProvider, NoopPersonaProvider } from '../../src/adapters/defaults.js';
 import { SwarmMemory } from '../../src/memory/index.js';
-import type { PersonaProvider, PersonaConfig } from '../../src/types.js';
+import { Logger } from '../../src/logger.js';
+import type { PersonaProvider, PersonaConfig, LogEntry } from '../../src/types.js';
 
 function createMockPersonaProvider(persona: PersonaConfig | null): PersonaProvider {
   return { getPersona: async () => persona };
@@ -126,5 +127,29 @@ describe('ContextAssembler', () => {
     const systemContent = messages[0].content;
     expect(systemContent).toContain('## Persona: PM');
     expect(systemContent).toContain('Role: product-manager');
+  });
+
+  it('logs context sections at debug level', async () => {
+    const logs: LogEntry[] = [];
+    const logger = new Logger({ level: 'debug', onLog: (e) => logs.push(e) });
+    const assembler = new ContextAssembler({
+      context: new NoopContextProvider(),
+      memory: new NoopMemoryProvider(),
+      codebase: new NoopCodebaseProvider(),
+      persona: new NoopPersonaProvider(),
+    }, logger);
+
+    await assembler.assemble({
+      systemPrompt: 'You are a test agent.',
+      task: 'Do something.',
+      contextWindow: 128_000,
+    });
+
+    const debugLogs = logs.filter(l => l.level === 'debug');
+    expect(debugLogs.some(l => l.message.includes('Context section'))).toBe(true);
+    expect(debugLogs.some(l => l.message.includes('Context assembled'))).toBe(true);
+    // Should include section count
+    const assembledLog = debugLogs.find(l => l.message.includes('Context assembled'));
+    expect(assembledLog?.context?.sections).toBeGreaterThanOrEqual(2);
   });
 });
