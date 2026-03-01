@@ -192,9 +192,17 @@ export interface EngineLimits {
   maxCycleIterations?: number;
 }
 
+export interface LogEntry {
+  level: 'debug' | 'info' | 'warn' | 'error';
+  message: string;
+  timestamp: number;
+  context?: Record<string, unknown>;
+}
+
 export interface LoggingConfig {
   level: 'debug' | 'info' | 'warn' | 'error';
   structured?: boolean;
+  onLog?: (entry: LogEntry) => void;
 }
 
 export interface ProviderConfig {

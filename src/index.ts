@@ -48,5 +48,8 @@ export type {
   AgenticTool,
 } from './adapters/agentic/types.js';
 
+// Logging
+export { Logger } from './logger.js';
+
 // Types
 export type * from './types.js';
