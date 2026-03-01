@@ -1,4 +1,4 @@
-import type { SwarmEvent, NodeResult, CostSummary, ProviderAdapter } from '../types.js';
+import type { SwarmEvent, NodeResult, CostSummary, ProviderAdapter, PersistenceAdapter, LifecycleHooks } from '../types.js';
 import type { AgentRunner } from '../agent/runner.js';
 import type { AgenticRunner } from '../agent/agentic-runner.js';
 import type { AgenticAdapter } from '../adapters/agentic/types.js';
@@ -41,6 +41,12 @@ export class DAGExecutor {
   private readonly agenticRunner?: AgenticRunner;
   private readonly agenticAdapters: Map<string, AgenticAdapter>;
   private readonly startTime: number;
+  private readonly persistence?: PersistenceAdapter;
+  private readonly lifecycle?: LifecycleHooks;
+  private readonly dagId: string;
+
+  /** Maps nodeId -> runId for persistence tracking. */
+  private readonly runIds = new Map<string, string>();
 
   /** Nodes that are targets of conditional edges and haven't been resolved yet. */
   private readonly conditionallyBlocked: Set<string> = new Set();
@@ -57,6 +63,8 @@ export class DAGExecutor {
     limits?: ExecutorLimits,
     agenticRunner?: AgenticRunner,
     agenticAdapters?: Map<string, AgenticAdapter>,
+    persistence?: PersistenceAdapter,
+    lifecycle?: LifecycleHooks,
   ) {
     this.graph = graph;
     this.runner = runner;
@@ -69,6 +77,9 @@ export class DAGExecutor {
     this.limits = limits ?? {};
     this.agenticRunner = agenticRunner;
     this.agenticAdapters = agenticAdapters ?? new Map();
+    this.persistence = persistence;
+    this.lifecycle = lifecycle;
+    this.dagId = graph.id;
     this.startTime = Date.now();
 
     // Pre-compute the set of nodes that are targets of conditional edges.
@@ -238,6 +249,9 @@ export class DAGExecutor {
 
     const startTime = Date.now();
 
+    // Persistence: create run record
+    const runId = await this.persistCreateRun(nodeId, node);
+
     try {
       let lastDoneEvent: Extract<SwarmEvent, { type: 'agent_done' }> | null = null;
 
@@ -271,6 +285,14 @@ export class DAGExecutor {
         if (event.type === 'agent_error') {
           scheduler.markFailed(nodeId);
           this.skipDownstream(nodeId, scheduler);
+          // Persistence: record failure
+          await this.persistUpdateRun(runId, {
+            status: 'failed',
+            error: event.message,
+            errorType: event.errorType,
+            durationMs: Date.now() - startTime,
+          });
+          await this.callLifecycleOnRunFailed(runId, node.agent.id, event.message, event.errorType);
           // Emit progress
           yield this.progressEvent(scheduler, completedNodeIds);
           return;
@@ -284,14 +306,27 @@ export class DAGExecutor {
           agentRole: lastDoneEvent.agentRole,
           output: lastDoneEvent.output,
         });
+        const durationMs = Date.now() - startTime;
         results.push({
           nodeId,
           agentRole: lastDoneEvent.agentRole,
           output: lastDoneEvent.output,
           artifactRequest: lastDoneEvent.artifactRequest,
           cost: lastDoneEvent.cost,
-          durationMs: Date.now() - startTime,
+          durationMs,
         });
+
+        // Persistence: record completion
+        await this.persistUpdateRun(runId, {
+          status: 'completed',
+          outputSummary: lastDoneEvent.output,
+          tokenUsage: lastDoneEvent.cost,
+          durationMs,
+        });
+        if (lastDoneEvent.artifactRequest) {
+          await this.persistCreateArtifact(lastDoneEvent.artifactRequest);
+        }
+        await this.callLifecycleOnRunComplete(runId, node.agent.id, lastDoneEvent.output, lastDoneEvent.artifactRequest);
 
         // Check per-agent budget
         const agentBudget = this.costTracker.checkAgentBudget(node.agent.id);
@@ -332,6 +367,14 @@ export class DAGExecutor {
         message,
         errorType: 'unknown' as const,
       };
+      // Persistence: record exception failure
+      await this.persistUpdateRun(runId, {
+        status: 'failed',
+        error: message,
+        errorType: 'unknown',
+        durationMs: Date.now() - startTime,
+      });
+      await this.callLifecycleOnRunFailed(runId, node.agent.id, message, 'unknown');
       yield this.progressEvent(scheduler, completedNodeIds);
     }
   }
@@ -362,6 +405,9 @@ export class DAGExecutor {
 
       const upstreamOutputs = this.getUpstreamOutputs(nodeId, outputs);
       const startTime = Date.now();
+
+      // Persistence: create run record
+      const runId = await this.persistCreateRun(nodeId, node);
 
       try {
         let lastDoneEvent: Extract<SwarmEvent, { type: 'agent_done' }> | null = null;
@@ -396,6 +442,14 @@ export class DAGExecutor {
           if (event.type === 'agent_error') {
             scheduler.markFailed(nodeId);
             this.skipDownstream(nodeId, scheduler);
+            // Persistence: record failure
+            await this.persistUpdateRun(runId, {
+              status: 'failed',
+              error: event.message,
+              errorType: event.errorType,
+              durationMs: Date.now() - startTime,
+            });
+            await this.callLifecycleOnRunFailed(runId, node.agent.id, event.message, event.errorType);
             return { nodeId, events };
           }
         }
@@ -407,14 +461,27 @@ export class DAGExecutor {
             agentRole: lastDoneEvent.agentRole,
             output: lastDoneEvent.output,
           });
+          const durationMs = Date.now() - startTime;
           results.push({
             nodeId,
             agentRole: lastDoneEvent.agentRole,
             output: lastDoneEvent.output,
             artifactRequest: lastDoneEvent.artifactRequest,
             cost: lastDoneEvent.cost,
-            durationMs: Date.now() - startTime,
+            durationMs,
           });
+
+          // Persistence: record completion
+          await this.persistUpdateRun(runId, {
+            status: 'completed',
+            outputSummary: lastDoneEvent.output,
+            tokenUsage: lastDoneEvent.cost,
+            durationMs,
+          });
+          if (lastDoneEvent.artifactRequest) {
+            await this.persistCreateArtifact(lastDoneEvent.artifactRequest);
+          }
+          await this.callLifecycleOnRunComplete(runId, node.agent.id, lastDoneEvent.output, lastDoneEvent.artifactRequest);
 
           // Check per-agent budget
           const agentBudget = this.costTracker.checkAgentBudget(node.agent.id);
@@ -462,6 +529,14 @@ export class DAGExecutor {
           message,
           errorType: 'unknown',
         });
+        // Persistence: record exception failure
+        await this.persistUpdateRun(runId, {
+          status: 'failed',
+          error: message,
+          errorType: 'unknown',
+          durationMs: Date.now() - startTime,
+        });
+        await this.callLifecycleOnRunFailed(runId, node.agent.id, message, 'unknown');
       }
 
       return { nodeId, events };
@@ -769,5 +844,86 @@ export class DAGExecutor {
     }
 
     return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Persistence helpers — all calls are fire-and-forget safe (errors swallowed)
+  // ---------------------------------------------------------------------------
+
+  private async persistCreateRun(
+    nodeId: string,
+    node: { agent: { id: string; role: string }; task?: string },
+  ): Promise<string | undefined> {
+    if (!this.persistence) return undefined;
+    try {
+      const runId = await this.persistence.createRun({
+        agentId: node.agent.id,
+        agentRole: node.agent.role,
+        swarmId: this.dagId,
+        nodeId,
+        task: node.task ?? this.task,
+      });
+      this.runIds.set(nodeId, runId);
+      // Call onRunStart lifecycle hook
+      if (this.lifecycle?.onRunStart) {
+        try { await this.lifecycle.onRunStart(runId, node.agent.id); } catch { /* swallow */ }
+      }
+      return runId;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async persistUpdateRun(
+    runId: string | undefined,
+    updates: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.persistence || !runId) return;
+    try {
+      await this.persistence.updateRun(runId, updates);
+    } catch {
+      // Persistence failure must not break execution
+    }
+  }
+
+  private async persistCreateArtifact(artifact: import('../types.js').ArtifactRequest): Promise<void> {
+    if (!this.persistence) return;
+    try {
+      await this.persistence.createArtifact(artifact);
+    } catch {
+      // Persistence failure must not break execution
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Lifecycle hook helpers
+  // ---------------------------------------------------------------------------
+
+  private async callLifecycleOnRunComplete(
+    runId: string | undefined,
+    agentId: string,
+    output: string,
+    artifact?: import('../types.js').ArtifactRequest,
+  ): Promise<void> {
+    if (!this.lifecycle?.onRunComplete || !runId) return;
+    try {
+      await this.lifecycle.onRunComplete(runId, agentId, output, artifact);
+    } catch {
+      // Lifecycle hook failure must not break execution
+    }
+  }
+
+  private async callLifecycleOnRunFailed(
+    runId: string | undefined,
+    agentId: string,
+    error: string,
+    errorType: string,
+  ): Promise<void> {
+    if (!this.lifecycle?.onRunFailed || !runId) return;
+    try {
+      await this.lifecycle.onRunFailed(runId, agentId, error, errorType as import('../types.js').AgentErrorType);
+    } catch {
+      // Lifecycle hook failure must not break execution
+    }
   }
 }

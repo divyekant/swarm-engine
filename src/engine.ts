@@ -186,6 +186,8 @@ export class SwarmEngine {
       },
       agenticRunner,
       this.agenticAdapters,
+      this.persistence,
+      this.config.lifecycle,
     );
 
     // 9. Yield all events from executor

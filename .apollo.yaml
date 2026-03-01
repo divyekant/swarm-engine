@@ -1,0 +1,9 @@
+# Apollo Project Config — swarm-engine
+extends: oss
+version: 0.1.1
+
+# Project-specific overrides
+stack:
+  language: typescript
+  package_manager: bun
+  test_framework: vitest
