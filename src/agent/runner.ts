@@ -10,6 +10,7 @@ import type { ContextAssembler } from '../context/assembler.js';
 import type { CostTracker } from '../cost/tracker.js';
 import { AgentNode } from './node.js';
 import { classifyError } from '../errors/classification.js';
+import { Logger } from '../logger.js';
 
 export interface AgentRunParams {
   nodeId: string;
@@ -30,17 +31,20 @@ export class AgentRunner {
   private providers: Map<string, ProviderAdapter>;
   private assembler: ContextAssembler;
   private costTracker: CostTracker;
+  private logger: Logger;
 
   constructor(
     defaultProvider: ProviderAdapter,
     assembler: ContextAssembler,
     costTracker: CostTracker,
     providers?: Map<string, ProviderAdapter>,
+    logger?: Logger,
   ) {
     this.defaultProvider = defaultProvider;
     this.providers = providers ?? new Map();
     this.assembler = assembler;
     this.costTracker = costTracker;
+    this.logger = logger ?? new Logger();
   }
 
   async *run(params: AgentRunParams): AsyncGenerator<SwarmEvent> {
@@ -50,6 +54,7 @@ export class AgentRunner {
     // Resolve provider: use agent's providerId if available, else default
     const provider = (agent.providerId ? this.providers.get(agent.providerId) : undefined)
       ?? this.defaultProvider;
+    this.logger.debug('Provider selected', { nodeId, providerId: agent.providerId ?? 'default', fallback: !agent.providerId });
 
     const node = new AgentNode(nodeId, agent);
     node.status = 'running';
@@ -122,6 +127,7 @@ export class AgentRunner {
                 tool: event.name,
                 input: event.input,
               };
+              this.logger.debug('Tool called', { nodeId, tool: event.name });
 
               // Append assistant tool_calls and tool result to messages, then re-stream
               currentMessages.push({
@@ -151,6 +157,7 @@ export class AgentRunner {
                 outputTokens: event.outputTokens,
                 model: agent.model ?? 'default',
               });
+              this.logger.debug('Cost recorded', { nodeId, model: agent.model ?? 'default', inputTokens: event.inputTokens, outputTokens: event.outputTokens });
               break;
             }
           }
@@ -193,6 +200,7 @@ export class AgentRunner {
         message,
         errorType,
       };
+      this.logger.error('Agent stream error', { nodeId, errorType, message });
     }
   }
 }

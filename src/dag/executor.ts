@@ -7,6 +7,7 @@ import type { SwarmMemory } from '../memory/index.js';
 import { DAGGraph } from './graph.js';
 import { Scheduler } from './scheduler.js';
 import { evaluate } from '../agent/evaluator.js';
+import { Logger } from '../logger.js';
 
 export interface ExecutorLimits {
   maxConcurrentAgents?: number;
@@ -44,6 +45,7 @@ export class DAGExecutor {
   private readonly persistence?: PersistenceAdapter;
   private readonly lifecycle?: LifecycleHooks;
   private readonly dagId: string;
+  private readonly logger: Logger;
 
   /** Maps nodeId -> runId for persistence tracking. */
   private readonly runIds = new Map<string, string>();
@@ -65,6 +67,7 @@ export class DAGExecutor {
     agenticAdapters?: Map<string, AgenticAdapter>,
     persistence?: PersistenceAdapter,
     lifecycle?: LifecycleHooks,
+    logger?: Logger,
   ) {
     this.graph = graph;
     this.runner = runner;
@@ -80,6 +83,7 @@ export class DAGExecutor {
     this.persistence = persistence;
     this.lifecycle = lifecycle;
     this.dagId = graph.id;
+    this.logger = logger ?? new Logger();
     this.startTime = Date.now();
 
     // Pre-compute the set of nodes that are targets of conditional edges.
@@ -102,6 +106,8 @@ export class DAGExecutor {
       dagId: this.graph.id,
       nodeCount: this.graph.nodes.length,
     };
+
+    this.logger.info('Swarm execution started', { dagId: this.graph.id, nodeCount: this.graph.nodes.length });
 
     try {
       while (!scheduler.isDone()) {
@@ -247,10 +253,16 @@ export class DAGExecutor {
     // Collect upstream outputs
     const upstreamOutputs = this.getUpstreamOutputs(nodeId, outputs);
 
+    if (upstreamOutputs.length > 0) {
+      this.logger.debug('Upstream outputs wired', { nodeId, upstreamNodeIds: upstreamOutputs.map(u => u.nodeId) });
+    }
+
     const startTime = Date.now();
 
     // Persistence: create run record
     const runId = await this.persistCreateRun(nodeId, node);
+
+    this.logger.info('Node starting', { nodeId, agentId: node.agent.id, agentRole: node.agent.role, provider: node.agent.providerId });
 
     try {
       let lastDoneEvent: Extract<SwarmEvent, { type: 'agent_done' }> | null = null;
@@ -283,6 +295,7 @@ export class DAGExecutor {
         }
 
         if (event.type === 'agent_error') {
+          this.logger.warn('Node failed', { nodeId, error: event.message, errorType: event.errorType });
           scheduler.markFailed(nodeId);
           this.skipDownstream(nodeId, scheduler);
           // Persistence: record failure
@@ -307,6 +320,7 @@ export class DAGExecutor {
           output: lastDoneEvent.output,
         });
         const durationMs = Date.now() - startTime;
+        this.logger.info('Node completed', { nodeId, durationMs, outputLength: lastDoneEvent.output.length, costCents: lastDoneEvent.cost.costCents });
         results.push({
           nodeId,
           agentRole: lastDoneEvent.agentRole,
@@ -394,6 +408,8 @@ export class DAGExecutor {
   ): AsyncGenerator<SwarmEvent> {
     // Collect all events from each parallel node execution
     const nodeEventSets: Map<string, SwarmEvent[]> = new Map();
+
+    this.logger.info('Parallel batch launched', { nodeIds, count: nodeIds.length });
 
     const promises = nodeIds.map(async (nodeId) => {
       const events: SwarmEvent[] = [];
@@ -698,6 +714,7 @@ export class DAGExecutor {
           toNode: selectedNodeId,
           reason,
         };
+        this.logger.info('Route decided', { from: nodeId, to: selectedNodeId, reason });
       } else {
         // No valid target found -- skip all conditional targets
         for (const targetNodeId of Object.values(ce.targets)) {
@@ -739,6 +756,7 @@ export class DAGExecutor {
         iteration,
         maxIterations: edge.maxCycles,
       };
+      this.logger.debug('Cycle iteration', { nodeId, iteration, maxIterations: edge.maxCycles });
 
       if (iteration < edge.maxCycles) {
         scheduler.resetNodeForCycle(nodeId);
@@ -783,6 +801,8 @@ export class DAGExecutor {
         if (!edge.from || !edge.to) continue; // skip invalid edges
         this.graph.addEdge(edge);
       }
+
+      this.logger.debug('DAG expanded', { nodeId, newNodes: parsed.nodes.length, newEdges: parsed.edges.length });
     } catch {
       // JSON parse failure — not a DAG output, skip silently
     }
@@ -835,6 +855,7 @@ export class DAGExecutor {
     }
 
     if (percentUsed >= 80) {
+      this.logger.warn('Budget threshold reached', { used: budget.used, limit, percentUsed: Math.round(percentUsed) });
       return {
         type: 'budget_warning',
         used: budget.used,
@@ -870,6 +891,7 @@ export class DAGExecutor {
       }
       return runId;
     } catch {
+      this.logger.warn('Persistence error swallowed', { operation: 'createRun', nodeId });
       return undefined;
     }
   }
@@ -882,7 +904,7 @@ export class DAGExecutor {
     try {
       await this.persistence.updateRun(runId, updates);
     } catch {
-      // Persistence failure must not break execution
+      this.logger.warn('Persistence error swallowed', { operation: 'updateRun', runId });
     }
   }
 
@@ -891,7 +913,7 @@ export class DAGExecutor {
     try {
       await this.persistence.createArtifact(artifact);
     } catch {
-      // Persistence failure must not break execution
+      this.logger.warn('Persistence error swallowed', { operation: 'createArtifact' });
     }
   }
 

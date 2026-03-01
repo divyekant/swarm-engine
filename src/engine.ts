@@ -23,6 +23,7 @@ import {
   NoopCodebaseProvider,
   NoopPersonaProvider,
 } from './adapters/defaults.js';
+import { Logger } from './logger.js';
 
 /**
  * SwarmEngine is the main entry point for the multi-agent DAG orchestration engine.
@@ -54,6 +55,7 @@ export class SwarmEngine {
   private readonly memory;
   private readonly codebase;
   private readonly persona;
+  private readonly logger: Logger;
 
   constructor(config: SwarmEngineConfig) {
     this.config = config;
@@ -75,6 +77,13 @@ export class SwarmEngine {
     this.memory = config.memory ?? new NoopMemoryProvider();
     this.codebase = config.codebase ?? new NoopCodebaseProvider();
     this.persona = config.persona ?? new NoopPersonaProvider();
+
+    this.logger = config.logging ? new Logger(config.logging) : new Logger();
+    this.logger.info('Engine initialized', {
+      providers: [...this.providers.keys()],
+      agenticProviders: [...this.agenticAdapters.keys()],
+      defaults: this.config.defaults,
+    });
   }
 
   /**
@@ -102,6 +111,8 @@ export class SwarmEngine {
       };
       return;
     }
+
+    this.logger.info('DAG validated', { dagId: options.dag.id, nodes: options.dag.nodes.length, edges: options.dag.edges.length });
 
     // 1b. Apply engine defaults to agent descriptors
     const defaults = this.config.defaults;
@@ -140,7 +151,7 @@ export class SwarmEngine {
       memory: this.memory,
       codebase: this.codebase,
       persona: this.persona,
-    });
+    }, this.logger);
 
     // 5. Determine the default provider
     const defaultProviderKey = this.config.defaults?.provider
@@ -160,7 +171,7 @@ export class SwarmEngine {
     }
 
     // 6. Create agent runner
-    const runner = new AgentRunner(defaultProvider, assembler, costTracker, this.providers);
+    const runner = new AgentRunner(defaultProvider, assembler, costTracker, this.providers, this.logger);
 
     // 6b. Create agentic runner if agentic adapters exist
     const agenticRunner = this.agenticAdapters.size > 0
@@ -188,6 +199,7 @@ export class SwarmEngine {
       this.agenticAdapters,
       this.persistence,
       this.config.lifecycle,
+      this.logger,
     );
 
     // 9. Yield all events from executor

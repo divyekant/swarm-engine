@@ -7,6 +7,7 @@ import type {
 } from '../types.js';
 import type { SwarmMemory } from '../memory/index.js';
 import { TokenBudget } from './budget.js';
+import { Logger } from '../logger.js';
 
 interface UpstreamOutput {
   nodeId: string;
@@ -45,9 +46,11 @@ interface AssemblerDeps {
  */
 export class ContextAssembler {
   private deps: AssemblerDeps;
+  private logger: Logger;
 
-  constructor(deps: AssemblerDeps) {
+  constructor(deps: AssemblerDeps, logger?: Logger) {
     this.deps = deps;
+    this.logger = logger ?? new Logger();
   }
 
   async assemble(params: AssembleParams): Promise<Message[]> {
@@ -73,6 +76,7 @@ export class ContextAssembler {
       if (persona.fullPrompt) {
         // Full PersonaSmith Markdown — inject as-is for maximum fidelity
         budget.add('persona', persona.fullPrompt, 1);
+        this.logger.debug('Context section added', { section: 'persona', charLength: persona.fullPrompt.length });
       } else {
         // Slim metadata — build structured block from fields
         const personaBlock = [
@@ -84,14 +88,17 @@ export class ContextAssembler {
           persona.expertise?.length ? `Expertise: ${persona.expertise.join(', ')}` : '',
         ].filter(Boolean).join('\n');
         budget.add('persona', personaBlock, 1);
+        this.logger.debug('Context section added', { section: 'persona', charLength: personaBlock.length });
       }
     }
 
     // --- Priority 1: System prompt ---
     budget.add('system', systemPrompt, 1);
+    this.logger.debug('Context section added', { section: 'system', charLength: systemPrompt.length });
 
     // --- Priority 1: Task ---
     budget.add('task', `## Task\n${task}`, 1);
+    this.logger.debug('Context section added', { section: 'task', charLength: task.length });
 
     // --- Priority 2: Upstream outputs ---
     if (upstreamOutputs?.length) {
@@ -99,6 +106,7 @@ export class ContextAssembler {
         .map(u => `### Output from ${u.agentRole} (${u.nodeId})\n${u.output}`)
         .join('\n\n');
       budget.add('upstream', `## Upstream Outputs\n${upstreamBlock}`, 2);
+      this.logger.debug('Context section added', { section: 'upstream', charLength: upstreamBlock.length });
     }
 
     // --- Priority 3: Inbox / channels ---
@@ -109,6 +117,7 @@ export class ContextAssembler {
           .map(m => `[${m.from}]: ${m.content}`)
           .join('\n');
         budget.add('inbox', `## Messages\n${inboxBlock}`, 3);
+        this.logger.debug('Context section added', { section: 'inbox', charLength: inboxBlock.length });
       }
     }
 
@@ -117,6 +126,7 @@ export class ContextAssembler {
       const scratchpadContent = swarmMemory.scratchpad.toContext();
       if (scratchpadContent) {
         budget.add('scratchpad', `## Shared State\n${scratchpadContent}`, 3);
+        this.logger.debug('Context section added', { section: 'scratchpad', charLength: scratchpadContent.length });
       }
     }
 
@@ -125,6 +135,7 @@ export class ContextAssembler {
       const entityContext = await this.deps.context.getContext(entityType, entityId);
       if (entityContext) {
         budget.add('entity', `## Entity Context\n${entityContext}`, 4);
+        this.logger.debug('Context section added', { section: 'entity', charLength: entityContext.length });
       }
     }
 
@@ -135,6 +146,7 @@ export class ContextAssembler {
         .map(m => `- ${m.text}`)
         .join('\n');
       budget.add('memory', `## Relevant Memory\n${memoryBlock}`, 5);
+      this.logger.debug('Context section added', { section: 'memory', charLength: memoryBlock.length });
     }
 
     // --- Priority 6: Codebase ---
@@ -142,11 +154,13 @@ export class ContextAssembler {
       const codebaseContext = await this.deps.codebase.query(entityId, task, 'mini');
       if (codebaseContext) {
         budget.add('codebase', `## Codebase\n${codebaseContext}`, 6);
+        this.logger.debug('Context section added', { section: 'codebase', charLength: codebaseContext.length });
       }
     }
 
     // Build system message content
     const systemContent = budget.build();
+    this.logger.debug('Context assembled', { totalChars: systemContent.length });
 
     const messages: Message[] = [];
 
