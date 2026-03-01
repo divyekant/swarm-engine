@@ -87,7 +87,7 @@ export function createAgenticAdapter(config: ProviderConfig): AgenticAdapter {
           'Install it with: npm install @anthropic-ai/claude-agent-sdk',
         );
       }
-      return createLazyAdapter('./claude-code-adapter.js');
+      return createLazyAdapter('./adapters/agentic/claude-code-adapter.js');
     }
 
     case 'codex': {
@@ -97,7 +97,7 @@ export function createAgenticAdapter(config: ProviderConfig): AgenticAdapter {
           'Install it with: npm install @openai/codex-sdk',
         );
       }
-      return createLazyAdapter('./codex-adapter.js');
+      return createLazyAdapter('./adapters/agentic/codex-adapter.js');
     }
 
     default:
