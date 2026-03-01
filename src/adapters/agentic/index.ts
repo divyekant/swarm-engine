@@ -14,19 +14,6 @@ export function isAgenticProvider(type: string): boolean {
 }
 
 /**
- * Check whether a package is resolvable from the current project.
- * Uses import.meta.resolve() which is synchronous in Node >= 20.
- */
-function isPackageInstalled(packageName: string): boolean {
-  try {
-    import.meta.resolve(packageName);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Dynamically import a module by path. Uses a variable to prevent TypeScript
  * from statically analyzing the import path (which would fail for modules
  * that don't exist yet, e.g. ClaudeCodeAdapter and CodexAdapter).
@@ -39,15 +26,26 @@ async function dynamicImport(modulePath: string): Promise<Record<string, unknown
  * Creates a lazy-loading AgenticAdapter that defers the actual SDK import
  * to the first call to run(). This lets createAgenticAdapter remain synchronous
  * while still doing dynamic imports for the concrete adapter classes.
+ *
+ * If the adapter file fails to load (e.g. the required SDK is not installed),
+ * the error is caught and re-thrown with a helpful install message.
  */
-function createLazyAdapter(modulePath: string): AgenticAdapter {
+function createLazyAdapter(modulePath: string, sdkPackage: string): AgenticAdapter {
   let cached: AgenticAdapter | null = null;
 
   async function getAdapter(): Promise<AgenticAdapter> {
     if (!cached) {
-      const mod = await dynamicImport(modulePath);
-      const Ctor = (mod.default ?? mod) as new () => AgenticAdapter;
-      cached = new Ctor();
+      try {
+        const mod = await dynamicImport(modulePath);
+        const Ctor = (mod.default ?? mod) as new () => AgenticAdapter;
+        cached = new Ctor();
+      } catch (err: unknown) {
+        throw new Error(
+          `Failed to load agentic adapter from ${modulePath}. ` +
+          `Ensure ${sdkPackage} is installed: npm install ${sdkPackage}`,
+          { cause: err },
+        );
+      }
     }
     return cached;
   }
@@ -81,23 +79,11 @@ export function createAgenticAdapter(config: ProviderConfig): AgenticAdapter {
     }
 
     case 'claude-code': {
-      if (!isPackageInstalled('@anthropic-ai/claude-agent-sdk')) {
-        throw new Error(
-          '@anthropic-ai/claude-agent-sdk is not installed. ' +
-          'Install it with: npm install @anthropic-ai/claude-agent-sdk',
-        );
-      }
-      return createLazyAdapter('./adapters/agentic/claude-code-adapter.js');
+      return createLazyAdapter('./adapters/agentic/claude-code-adapter.js', '@anthropic-ai/claude-agent-sdk');
     }
 
     case 'codex': {
-      if (!isPackageInstalled('@openai/codex-sdk')) {
-        throw new Error(
-          '@openai/codex-sdk is not installed. ' +
-          'Install it with: npm install @openai/codex-sdk',
-        );
-      }
-      return createLazyAdapter('./adapters/agentic/codex-adapter.js');
+      return createLazyAdapter('./adapters/agentic/codex-adapter.js', '@openai/codex-sdk');
     }
 
     default:

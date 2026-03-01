@@ -1,6 +1,6 @@
 # Apollo Project Config — swarm-engine
 extends: oss
-version: 0.1.3
+version: 0.1.4
 
 # Project-specific overrides
 stack:
