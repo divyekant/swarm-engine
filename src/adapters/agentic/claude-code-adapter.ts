@@ -32,6 +32,25 @@ export class ClaudeCodeAdapter implements AgenticAdapter {
       },
     };
 
+    // Resolve CLI path: explicit option > auto-detect from SDK package
+    if (params.agenticOptions?.pathToClaudeCodeExecutable) {
+      options.pathToClaudeCodeExecutable = params.agenticOptions.pathToClaudeCodeExecutable;
+    } else {
+      try {
+        const { createRequire } = await import('node:module');
+        const { dirname, join } = await import('node:path');
+        const { existsSync } = await import('node:fs');
+        const req = createRequire(import.meta.url);
+        const sdkEntry = req.resolve('@anthropic-ai/claude-agent-sdk');
+        const cliPath = join(dirname(sdkEntry), 'cli.js');
+        if (existsSync(cliPath)) {
+          options.pathToClaudeCodeExecutable = cliPath;
+        }
+      } catch {
+        // Let the SDK handle resolution
+      }
+    }
+
     // Pass through optional agentic options
     if (params.agenticOptions?.allowedTools) options.allowedTools = params.agenticOptions.allowedTools;
     if (params.agenticOptions?.disallowedTools) options.disallowedTools = params.agenticOptions.disallowedTools;

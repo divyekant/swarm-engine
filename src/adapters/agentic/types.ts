@@ -22,6 +22,7 @@ export interface AgenticOptions {
   model?: string;
   mcpServers?: Record<string, unknown>;
   env?: Record<string, string>;
+  pathToClaudeCodeExecutable?: string;
 }
 
 export type AgenticEvent =

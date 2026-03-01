@@ -336,6 +336,31 @@ describe('ClaudeCodeAdapter', () => {
     });
   });
 
+  it('passes pathToClaudeCodeExecutable to query options when provided', async () => {
+    mockQuery.mockReturnValue(
+      (async function* () {
+        yield {
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+          total_cost_usd: 0,
+          usage: { input_tokens: 0, output_tokens: 0 },
+        };
+      })(),
+    );
+
+    const params = makeParams({
+      agenticOptions: {
+        pathToClaudeCodeExecutable: '/custom/path/to/claude',
+      },
+    });
+
+    await collectEvents(adapter.run(params));
+
+    const callArgs = mockQuery.mock.calls[0][0];
+    expect(callArgs.options.pathToClaudeCodeExecutable).toBe('/custom/path/to/claude');
+  });
+
   it('handles result with missing result field gracefully', async () => {
     mockQuery.mockReturnValue(
       (async function* () {
