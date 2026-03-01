@@ -3,6 +3,7 @@ import type { LogEntry, LoggingConfig } from './types.js';
 const LEVELS: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
 export class Logger {
+  private readonly config: LoggingConfig | undefined;
   private readonly threshold: number;
   private readonly structured: boolean;
   private readonly onLog?: (entry: LogEntry) => void;
@@ -10,6 +11,7 @@ export class Logger {
   private readonly enabled: boolean;
 
   constructor(config?: LoggingConfig, baseContext?: Record<string, unknown>) {
+    this.config = config;
     this.enabled = !!config;
     this.threshold = config ? LEVELS[config.level] : 4;
     this.structured = config?.structured ?? false;
@@ -18,15 +20,7 @@ export class Logger {
   }
 
   child(context: Record<string, unknown>): Logger {
-    const child = Object.create(Logger.prototype) as Logger;
-    Object.assign(child, {
-      enabled: this.enabled,
-      threshold: this.threshold,
-      structured: this.structured,
-      onLog: this.onLog,
-      baseContext: { ...this.baseContext, ...context },
-    });
-    return child;
+    return new Logger(this.config, { ...this.baseContext, ...context });
   }
 
   debug(message: string, context?: Record<string, unknown>): void { this.log('debug', message, context); }

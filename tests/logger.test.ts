@@ -40,6 +40,16 @@ describe('Logger', () => {
       logger.warn('no-op');
       logger.error('no-op');
     });
+
+    it('does not write to stderr when config is undefined', () => {
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const logger = new Logger();
+
+      logger.error('should not appear');
+
+      expect(stderrSpy).not.toHaveBeenCalled();
+      stderrSpy.mockRestore();
+    });
   });
 
   describe('child logger', () => {
@@ -55,6 +65,19 @@ describe('Logger', () => {
       const entry = onLog.mock.calls[0][0] as LogEntry;
       expect(entry.context).toEqual({ dagId: 'dag-1', nodeId: 'a' });
     });
+
+    it('inherits level filtering from parent', () => {
+      const onLog = vi.fn();
+      const parent = new Logger({ level: 'warn', onLog });
+      const child = parent.child({ component: 'test' });
+
+      child.debug('filtered');
+      child.info('filtered');
+      child.warn('shown');
+
+      expect(onLog).toHaveBeenCalledTimes(1);
+      expect(onLog.mock.calls[0][0].level).toBe('warn');
+    });
   });
 
   describe('LogEntry structure', () => {
@@ -69,6 +92,16 @@ describe('Logger', () => {
       expect(entry.message).toBe('hello');
       expect(entry.timestamp).toBeGreaterThan(0);
       expect(entry.context).toEqual({ key: 'val' });
+    });
+
+    it('omits context when none is provided', () => {
+      const onLog = vi.fn();
+      const logger = new Logger({ level: 'info', onLog });
+
+      logger.info('bare message');
+
+      const entry = onLog.mock.calls[0][0] as LogEntry;
+      expect(entry.context).toBeUndefined();
     });
   });
 
