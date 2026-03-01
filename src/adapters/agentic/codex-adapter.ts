@@ -35,6 +35,3 @@ export class CodexAdapter implements AgenticAdapter {
     }
   }
 }
-
-// Default export for lazy loading via createLazyAdapter
-export default CodexAdapter;

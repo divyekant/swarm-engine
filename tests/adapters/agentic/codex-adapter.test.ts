@@ -249,8 +249,4 @@ describe('CodexAdapter', () => {
     });
   });
 
-  it('has default export for lazy loading', async () => {
-    const mod = await import('../../../src/adapters/agentic/codex-adapter.js');
-    expect(mod.default).toBe(CodexAdapter);
-  });
 });

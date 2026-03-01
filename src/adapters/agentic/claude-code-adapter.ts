@@ -87,6 +87,3 @@ export class ClaudeCodeAdapter implements AgenticAdapter {
     }
   }
 }
-
-// Default export for lazy loading via createLazyAdapter
-export default ClaudeCodeAdapter;

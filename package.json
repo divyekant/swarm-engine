@@ -1,6 +1,6 @@
 {
   "name": "@swarmengine/core",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Multi-agent DAG orchestration engine with actor-style agents, cost tracking, and pluggable adapters",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

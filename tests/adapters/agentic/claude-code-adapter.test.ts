@@ -360,8 +360,4 @@ describe('ClaudeCodeAdapter', () => {
     });
   });
 
-  it('has a default export for lazy loading', async () => {
-    const mod = await import('../../../src/adapters/agentic/claude-code-adapter.js');
-    expect(mod.default).toBe(ClaudeCodeAdapter);
-  });
 });
