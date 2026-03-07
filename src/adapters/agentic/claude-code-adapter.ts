@@ -17,7 +17,9 @@ export class ClaudeCodeAdapter implements AgenticAdapter {
     delete cleanEnv['CLAUDECODE'];
 
     const options: Record<string, unknown> = {
-      systemPrompt: params.systemPrompt,
+      systemPrompt: params.systemPrompt
+        ? { type: 'preset', preset: 'claude_code', append: params.systemPrompt }
+        : { type: 'preset', preset: 'claude_code' },
       permissionMode,
       mcpServers: { ...(params.agenticOptions?.mcpServers as Record<string, unknown> ?? {}) },
       // Required when using bypassPermissions mode
@@ -80,29 +82,52 @@ export class ClaudeCodeAdapter implements AgenticAdapter {
       }
     }
 
-    for await (const message of query({ prompt: fullPrompt, options })) {
-      if (message.type === 'assistant') {
-        for (const block of (message as any).message?.content ?? []) {
-          if ('text' in block) {
-            yield { type: 'chunk', content: block.text };
+    let messageCount = 0;
+    let lastResultSubtype: string | undefined;
+    try {
+      for await (const message of query({ prompt: fullPrompt, options })) {
+        messageCount++;
+        if (process.env.SWARM_DEBUG) {
+          process.stderr.write(`[cc-adapter] msg #${messageCount} type=${message.type} subtype=${(message as any).subtype ?? 'n/a'}\n`);
+        }
+        if (message.type === 'assistant') {
+          for (const block of (message as any).message?.content ?? []) {
+            if ('text' in block) {
+              yield { type: 'chunk', content: block.text };
+            }
+          }
+        } else if (message.type === 'result') {
+          const msg = message as any;
+          lastResultSubtype = msg.subtype;
+          if (msg.subtype === 'success') {
+            yield {
+              type: 'result',
+              output: msg.result ?? '',
+              costUsd: msg.total_cost_usd,
+              inputTokens: msg.usage?.input_tokens,
+              outputTokens: msg.usage?.output_tokens,
+            };
+          } else {
+            // Extract detailed error info — log full result for debugging
+            if (process.env.SWARM_DEBUG) {
+              process.stderr.write(`[cc-adapter] NON-SUCCESS result: ${JSON.stringify({ subtype: msg.subtype, error: msg.error, errors: msg.errors, result: msg.result?.substring?.(0, 200) })}\n`);
+            }
+            const errorDetail = msg.errors?.join('; ') ?? msg.error ?? 'Claude Code agent failed';
+            yield { type: 'error', message: errorDetail };
           }
         }
-      } else if (message.type === 'result') {
-        const msg = message as any;
-        if (msg.subtype === 'success') {
-          yield {
-            type: 'result',
-            output: msg.result ?? '',
-            costUsd: msg.total_cost_usd,
-            inputTokens: msg.usage?.input_tokens,
-            outputTokens: msg.usage?.output_tokens,
-          };
-        } else {
-          // Extract detailed error info
-          const errorDetail = msg.errors?.join('; ') ?? msg.error ?? 'Claude Code agent failed';
-          yield { type: 'error', message: errorDetail };
+      }
+      if (process.env.SWARM_DEBUG) {
+        process.stderr.write(`[cc-adapter] stream ended after ${messageCount} messages, lastResultSubtype=${lastResultSubtype ?? 'none'}\n`);
+      }
+    } catch (streamErr) {
+      if (process.env.SWARM_DEBUG) {
+        process.stderr.write(`[cc-adapter] stream threw: ${streamErr instanceof Error ? streamErr.message : String(streamErr)}\n`);
+        if (streamErr instanceof Error && streamErr.stack) {
+          process.stderr.write(`[cc-adapter] stack: ${streamErr.stack}\n`);
         }
       }
+      throw streamErr;
     }
   }
 }
