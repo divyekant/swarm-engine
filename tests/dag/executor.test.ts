@@ -896,6 +896,114 @@ describe('DAGExecutor', () => {
     });
   });
 
+  describe('handoff template wiring', () => {
+    it('passes handoff template from outgoing edge to runner', async () => {
+      let capturedHandoff: unknown = undefined;
+
+      const mockRunner = {
+        async *run(params: any): AsyncGenerator<SwarmEvent> {
+          if (params.nodeId === 'a') {
+            capturedHandoff = params.handoffTemplate;
+          }
+          yield { type: 'agent_start', nodeId: params.nodeId, agentRole: params.agent.role, agentName: params.agent.name };
+          yield { type: 'agent_done', nodeId: params.nodeId, agentRole: params.agent.role, output: `output-${params.nodeId}`, cost: emptyCost() };
+        },
+      } as AgentRunner;
+
+      const dag = new DAGBuilder()
+        .agent('a', agent('a'))
+        .agent('b', agent('b'))
+        .edge('a', 'b', { handoff: 'standard' })
+        .build();
+
+      const graph = new DAGGraph(dag);
+      const executor = new DAGExecutor(
+        graph, mockRunner, new CostTracker(null, null),
+        new SwarmMemory(), 'test task',
+      );
+
+      const events: SwarmEvent[] = [];
+      for await (const event of executor.execute()) {
+        events.push(event);
+      }
+
+      // Node 'a' has an outgoing edge with handoff 'standard', so it should receive the resolved template
+      expect(capturedHandoff).toBeDefined();
+      expect(capturedHandoff).toHaveProperty('id', 'standard');
+      expect(capturedHandoff).toHaveProperty('sections');
+    });
+
+    it('does not pass handoff template when edge has none', async () => {
+      let capturedHandoff: unknown = 'NOT_SET';
+
+      const mockRunner = {
+        async *run(params: any): AsyncGenerator<SwarmEvent> {
+          if (params.nodeId === 'a') {
+            capturedHandoff = params.handoffTemplate;
+          }
+          yield { type: 'agent_start', nodeId: params.nodeId, agentRole: params.agent.role, agentName: params.agent.name };
+          yield { type: 'agent_done', nodeId: params.nodeId, agentRole: params.agent.role, output: `output-${params.nodeId}`, cost: emptyCost() };
+        },
+      } as AgentRunner;
+
+      const dag = new DAGBuilder()
+        .agent('a', agent('a'))
+        .agent('b', agent('b'))
+        .edge('a', 'b')
+        .build();
+
+      const graph = new DAGGraph(dag);
+      const executor = new DAGExecutor(
+        graph, mockRunner, new CostTracker(null, null),
+        new SwarmMemory(), 'test task',
+      );
+
+      for await (const event of executor.execute()) {}
+
+      expect(capturedHandoff).toBeUndefined();
+    });
+
+    it('passes handoff template to parallel runners', async () => {
+      const capturedHandoffs: Record<string, unknown> = {};
+
+      const mockRunner = {
+        async *run(params: any): AsyncGenerator<SwarmEvent> {
+          capturedHandoffs[params.nodeId] = params.handoffTemplate;
+          yield { type: 'agent_start', nodeId: params.nodeId, agentRole: params.agent.role, agentName: params.agent.name };
+          yield { type: 'agent_done', nodeId: params.nodeId, agentRole: params.agent.role, output: `output-${params.nodeId}`, cost: emptyCost() };
+        },
+      } as AgentRunner;
+
+      const dag = new DAGBuilder()
+        .agent('root', agent('root'))
+        .agent('left', agent('left'))
+        .agent('right', agent('right'))
+        .agent('merge', agent('merge'))
+        .edge('root', 'left')
+        .edge('root', 'right')
+        .edge('left', 'merge', { handoff: 'qa-review' })
+        .edge('right', 'merge', { handoff: 'standard' })
+        .build();
+
+      const graph = new DAGGraph(dag);
+      const executor = new DAGExecutor(
+        graph, mockRunner, new CostTracker(null, null),
+        new SwarmMemory(), 'test task',
+      );
+
+      for await (const event of executor.execute()) {}
+
+      // root has outgoing edges but no handoff
+      expect(capturedHandoffs['root']).toBeUndefined();
+      // left has an outgoing edge with handoff 'qa-review'
+      expect(capturedHandoffs['left']).toBeDefined();
+      expect(capturedHandoffs['left']).toHaveProperty('id', 'qa-review');
+      // right has an outgoing edge with handoff 'standard'
+      expect(capturedHandoffs['right']).toBeDefined();
+      expect(capturedHandoffs['right']).toHaveProperty('id', 'standard');
+    });
+  });
+
   describe('per-node provider routing', () => {
     it('resolves provider from providers map when node has providerId', async () => {
       const nodeA = { ...agent('a'), providerId: 'fast' };

@@ -17,6 +17,8 @@ export interface AgenticRunnerParams {
   memory: SwarmMemory;
   upstreamOutputs?: { nodeId: string; agentRole: string; output: string }[];
   signal?: AbortSignal;
+  handoffTemplate?: import('../types.js').HandoffTemplate;
+  feedbackContext?: import('../types.js').FeedbackContext;
 }
 
 /**
@@ -43,6 +45,9 @@ export class AgenticRunner {
 
   async *run(params: AgenticRunnerParams): AsyncGenerator<SwarmEvent> {
     const { nodeId, agent, task, adapter, memory, upstreamOutputs, signal } = params;
+    // TODO: handoffTemplate and feedbackContext are accepted but not yet injected
+    // into agentic backends. Agentic adapters manage their own context assembly,
+    // so these need a new adapter.run() parameter or convention. (#follow-up)
 
     // 1. Yield agent_start
     yield {

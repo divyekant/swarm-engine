@@ -4,10 +4,13 @@ import type {
   MemoryProvider,
   CodebaseProvider,
   PersonaProvider,
+  HandoffTemplate,
+  FeedbackContext,
 } from '../types.js';
 import type { SwarmMemory } from '../memory/index.js';
 import { TokenBudget } from './budget.js';
 import { Logger } from '../logger.js';
+import { formatHandoffInstructions } from '../handoffs/formatter.js';
 
 interface UpstreamOutput {
   nodeId: string;
@@ -25,6 +28,8 @@ export interface AssembleParams {
   threadHistory?: Message[];
   entityType?: string;
   entityId?: string;
+  handoffTemplate?: HandoffTemplate;
+  feedbackContext?: FeedbackContext;
 }
 
 interface AssemblerDeps {
@@ -99,6 +104,31 @@ export class ContextAssembler {
     // --- Priority 1: Task ---
     budget.add('task', `## Task\n${task}`, 1);
     this.logger.debug('Context section added', { section: 'task', charLength: task.length });
+
+    // --- Priority 1: Handoff output instructions ---
+    if (params.handoffTemplate) {
+      const instructions = formatHandoffInstructions(params.handoffTemplate);
+      budget.add('handoff', instructions, 1);
+      this.logger.debug('Context section added', { section: 'handoff', charLength: instructions.length });
+    }
+
+    // --- Priority 1: Feedback context (retry loop) ---
+    if (params.feedbackContext) {
+      const { iteration, maxRetries, previousFeedback, feedbackHistory } = params.feedbackContext;
+      const feedbackBlock = [
+        `## Retry Feedback`,
+        `Attempt ${iteration} of ${maxRetries}. Your previous output was rejected.`,
+        '',
+        `### Latest Feedback`,
+        previousFeedback,
+        '',
+        ...(feedbackHistory.length > 1
+          ? [`### Feedback History`, ...feedbackHistory.map((f, i) => `${i + 1}. ${f}`)]
+          : []),
+      ].join('\n');
+      budget.add('feedback', feedbackBlock, 1);
+      this.logger.debug('Context section added', { section: 'feedback', charLength: feedbackBlock.length });
+    }
 
     // --- Priority 2: Upstream outputs ---
     if (upstreamOutputs?.length) {

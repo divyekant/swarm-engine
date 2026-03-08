@@ -4,6 +4,7 @@ import type {
   DAGNode,
   DAGEdge,
   ConditionalEdge,
+  FeedbackEdge,
   Evaluator,
 } from '../types.js';
 
@@ -14,6 +15,7 @@ export interface ConditionalEdgeConfig {
 
 export interface EdgeOptions {
   maxCycles?: number;
+  handoff?: string | import('../types.js').HandoffTemplate;
 }
 
 /**
@@ -32,6 +34,7 @@ export class DAGBuilder {
   private nodes: Map<string, DAGNode> = new Map();
   private edges: DAGEdge[] = [];
   private conditionalEdges: ConditionalEdge[] = [];
+  private feedbackEdges: FeedbackEdge[] = [];
   private dynamicNodeIds: Set<string> = new Set();
 
   /** Add an agent node. Throws if a node with the same ID already exists. */
@@ -49,6 +52,9 @@ export class DAGBuilder {
     if (options?.maxCycles !== undefined) {
       edge.maxCycles = options.maxCycles;
     }
+    if (options?.handoff !== undefined) {
+      edge.handoff = options.handoff;
+    }
     this.edges.push(edge);
     return this;
   }
@@ -60,6 +66,12 @@ export class DAGBuilder {
       evaluate: config.evaluate,
       targets: config.targets,
     });
+    return this;
+  }
+
+  /** Add a feedback edge for retry loops with evaluation. */
+  feedbackEdge(config: FeedbackEdge): this {
+    this.feedbackEdges.push(config);
     return this;
   }
 
@@ -98,6 +110,19 @@ export class DAGBuilder {
       }
     }
 
+    // Validate feedback edges
+    for (const fe of this.feedbackEdges) {
+      if (!this.nodes.has(fe.from)) {
+        throw new Error(`Feedback edge references non-existent source node: "${fe.from}"`);
+      }
+      if (!this.nodes.has(fe.to)) {
+        throw new Error(`Feedback edge references non-existent target node: "${fe.to}"`);
+      }
+      if (fe.escalation?.reroute && !this.nodes.has(fe.escalation.reroute)) {
+        throw new Error(`Feedback edge escalation reroute references non-existent node: "${fe.escalation.reroute}"`);
+      }
+    }
+
     // Validate dynamic expansion node references
     for (const nodeId of this.dynamicNodeIds) {
       if (!this.nodes.has(nodeId)) {
@@ -118,6 +143,7 @@ export class DAGBuilder {
       nodes: Array.from(this.nodes.values()),
       edges: [...this.edges],
       conditionalEdges: [...this.conditionalEdges],
+      feedbackEdges: [...this.feedbackEdges],
       dynamicNodes: Array.from(this.dynamicNodeIds),
     };
   }

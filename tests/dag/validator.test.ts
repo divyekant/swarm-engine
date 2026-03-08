@@ -23,6 +23,7 @@ function simpleDag(overrides?: Partial<DAGDefinition>): DAGDefinition {
     ],
     edges: [{ from: 'a', to: 'b' }],
     conditionalEdges: [],
+    feedbackEdges: [],
     dynamicNodes: [],
     ...overrides,
   };
@@ -359,6 +360,7 @@ describe('validateDAG', () => {
           targets: { pass: 'b' },
         },
       ],
+      feedbackEdges: [],
       dynamicNodes: [],
     };
 
@@ -381,12 +383,120 @@ describe('validateDAG', () => {
           targets: { pass: 'ghost' },
         },
       ],
+      feedbackEdges: [],
       dynamicNodes: [],
     };
 
     const result = validateDAG(dag);
     expect(result.valid).toBe(false);
     expect(result.errors.some(e => e.includes('ghost'))).toBe(true);
+  });
+
+  // --- Feedback edge validation ---
+
+  describe('feedback edge validation', () => {
+    it('passes for valid feedback edges', () => {
+      const dag: DAGDefinition = {
+        id: 'test',
+        nodes: [
+          { id: 'dev', agent: agent('dev') },
+          { id: 'qa', agent: agent('qa') },
+        ],
+        edges: [{ from: 'dev', to: 'qa' }],
+        conditionalEdges: [],
+        feedbackEdges: [{
+          from: 'qa', to: 'dev', maxRetries: 3,
+          evaluate: { type: 'regex', pattern: 'PASS', matchTarget: 'pass', elseTarget: 'fail' },
+          passLabel: 'pass',
+        }],
+        dynamicNodes: [],
+      };
+      const result = validateDAG(dag);
+      expect(result.valid).toBe(true);
+    });
+
+    it('fails for feedback edge with non-existent source', () => {
+      const dag: DAGDefinition = {
+        id: 'test',
+        nodes: [
+          { id: 'dev', agent: agent('dev') },
+        ],
+        edges: [],
+        conditionalEdges: [],
+        feedbackEdges: [{
+          from: 'nonexistent', to: 'dev', maxRetries: 3,
+          evaluate: { type: 'regex', pattern: 'PASS', matchTarget: 'pass', elseTarget: 'fail' },
+          passLabel: 'pass',
+        }],
+        dynamicNodes: [],
+      };
+      const result = validateDAG(dag);
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('nonexistent');
+    });
+
+    it('fails for feedback edge with non-existent target', () => {
+      const dag: DAGDefinition = {
+        id: 'test',
+        nodes: [
+          { id: 'qa', agent: agent('qa') },
+        ],
+        edges: [],
+        conditionalEdges: [],
+        feedbackEdges: [{
+          from: 'qa', to: 'nonexistent', maxRetries: 3,
+          evaluate: { type: 'regex', pattern: 'PASS', matchTarget: 'pass', elseTarget: 'fail' },
+          passLabel: 'pass',
+        }],
+        dynamicNodes: [],
+      };
+      const result = validateDAG(dag);
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('nonexistent');
+    });
+
+    it('fails for feedback edge with non-existent escalation reroute', () => {
+      const dag: DAGDefinition = {
+        id: 'test',
+        nodes: [
+          { id: 'dev', agent: agent('dev') },
+          { id: 'qa', agent: agent('qa') },
+        ],
+        edges: [{ from: 'dev', to: 'qa' }],
+        conditionalEdges: [],
+        feedbackEdges: [{
+          from: 'qa', to: 'dev', maxRetries: 3,
+          evaluate: { type: 'regex', pattern: 'PASS', matchTarget: 'pass', elseTarget: 'fail' },
+          passLabel: 'pass',
+          escalation: { action: 'reroute', reroute: 'nonexistent' },
+        }],
+        dynamicNodes: [],
+      };
+      const result = validateDAG(dag);
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('nonexistent');
+    });
+
+    it('detects provider reference in feedback edge evaluator', () => {
+      const dag: DAGDefinition = {
+        id: 'test',
+        nodes: [
+          { id: 'dev', agent: agent('dev') },
+          { id: 'qa', agent: agent('qa') },
+        ],
+        edges: [{ from: 'dev', to: 'qa' }],
+        conditionalEdges: [],
+        feedbackEdges: [{
+          from: 'qa', to: 'dev', maxRetries: 3,
+          evaluate: { type: 'llm', prompt: 'evaluate', providerId: 'missing-provider' },
+          passLabel: 'pass',
+        }],
+        dynamicNodes: [],
+      };
+      const result = validateDAG(dag, { providers: { anthropic: {} } });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.includes('missing-provider'))).toBe(true);
+    });
   });
 
   // --- Edge cases ---

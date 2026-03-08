@@ -200,6 +200,7 @@ export class SwarmEngine {
       this.persistence,
       this.config.lifecycle,
       this.logger,
+      this.config.guards,
     );
 
     // 9. Yield all events from executor

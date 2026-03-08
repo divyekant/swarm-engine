@@ -83,7 +83,11 @@ export type SwarmEvent =
   | { type: 'route_decision'; fromNode: string; toNode: string; reason: string }
   | { type: 'loop_iteration'; nodeId: string; iteration: number; maxIterations: number }
   | { type: 'budget_warning'; used: number; limit: number; percentUsed: number }
-  | { type: 'budget_exceeded'; used: number; limit: number };
+  | { type: 'budget_exceeded'; used: number; limit: number }
+  | { type: 'feedback_retry'; fromNode: string; toNode: string; iteration: number; maxRetries: number }
+  | { type: 'feedback_escalation'; fromNode: string; toNode: string; policy: EscalationPolicy; iteration: number }
+  | { type: 'guard_warning'; nodeId: string; guardId: string; guardType: string; message: string }
+  | { type: 'guard_blocked'; nodeId: string; guardId: string; guardType: string; message: string };
 
 export type AgentErrorType =
   | 'timeout'
@@ -126,12 +130,54 @@ export interface DAGNode {
   agent: AgentDescriptor;
   task?: string;
   canEmitDAG?: boolean;
+  guards?: Guard[];
 }
 
 export interface DAGEdge {
   from: string;
   to: string;
   maxCycles?: number;
+  handoff?: string | HandoffTemplate;
+}
+
+export interface HandoffTemplate {
+  id: string;
+  sections: HandoffSection[];
+}
+
+export interface HandoffSection {
+  key: string;
+  label: string;
+  required?: boolean;
+}
+
+export interface FeedbackContext {
+  iteration: number;
+  maxRetries: number;
+  previousFeedback: string;
+  feedbackHistory: string[];
+}
+
+export interface FeedbackEdge {
+  from: string;
+  to: string;
+  maxRetries: number;
+  evaluate: Evaluator;
+  passLabel: string;
+  escalation?: EscalationPolicy;
+}
+
+export interface EscalationPolicy {
+  action: 'skip' | 'fail' | 'reroute';
+  reroute?: string;
+  message?: string;
+}
+
+export interface Guard {
+  id: string;
+  type: 'scope-creep' | 'evidence' | string;
+  mode: 'warn' | 'block';
+  config?: Record<string, unknown>;
 }
 
 export interface ConditionalEdge {
@@ -174,6 +220,7 @@ export interface SwarmEngineConfig {
   defaults?: EngineDefaults;
   limits?: EngineLimits;
   logging?: LoggingConfig;
+  guards?: Guard[];
 }
 
 export interface EngineDefaults {
@@ -294,6 +341,7 @@ export interface DAGDefinition {
   nodes: DAGNode[];
   edges: DAGEdge[];
   conditionalEdges: ConditionalEdge[];
+  feedbackEdges: FeedbackEdge[];
   dynamicNodes: string[];
 }
 

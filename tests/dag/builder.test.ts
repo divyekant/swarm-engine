@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { DAGBuilder } from '../../src/dag/builder.js';
+import type { AgentDescriptor } from '../../src/types.js';
+
+function agent(id: string): AgentDescriptor {
+  return { id, name: id, role: id, systemPrompt: '' };
+}
 
 describe('DAGBuilder', () => {
   it('builds a sequential DAG', () => {
@@ -69,5 +74,38 @@ describe('DAGBuilder', () => {
       .build();
 
     expect(dag.dynamicNodes).toContain('coordinator');
+  });
+
+  describe('edge with handoff', () => {
+    it('stores handoff preset name on edge', () => {
+      const dag = new DAGBuilder()
+        .agent('a', agent('a'))
+        .agent('b', agent('b'))
+        .edge('a', 'b', { handoff: 'standard' })
+        .build();
+
+      expect(dag.edges[0].handoff).toBe('standard');
+    });
+
+    it('stores inline handoff template on edge', () => {
+      const inline = { id: 'custom', sections: [{ key: 'x', label: 'X' }] };
+      const dag = new DAGBuilder()
+        .agent('a', agent('a'))
+        .agent('b', agent('b'))
+        .edge('a', 'b', { handoff: inline })
+        .build();
+
+      expect(dag.edges[0].handoff).toEqual(inline);
+    });
+
+    it('edge without handoff has no handoff field', () => {
+      const dag = new DAGBuilder()
+        .agent('a', agent('a'))
+        .agent('b', agent('b'))
+        .edge('a', 'b')
+        .build();
+
+      expect(dag.edges[0].handoff).toBeUndefined();
+    });
   });
 });

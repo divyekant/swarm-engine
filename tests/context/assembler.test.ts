@@ -152,4 +152,122 @@ describe('ContextAssembler', () => {
     const assembledLog = debugLogs.find(l => l.message.includes('Context assembled'));
     expect(assembledLog?.context?.sections).toBeGreaterThanOrEqual(2);
   });
+
+  describe('handoff instructions', () => {
+    it('injects handoff formatting instructions into system prompt', async () => {
+      const assembler = new ContextAssembler({
+        context: new NoopContextProvider(),
+        memory: new NoopMemoryProvider(),
+        codebase: new NoopCodebaseProvider(),
+        persona: new NoopPersonaProvider(),
+      });
+
+      const template = {
+        id: 'test',
+        sections: [{ key: 'summary', label: 'Summary', required: true }],
+      };
+
+      const messages = await assembler.assemble({
+        systemPrompt: 'You are a developer.',
+        task: 'Build a feature',
+        contextWindow: 100000,
+        handoffTemplate: template,
+      });
+
+      const systemContent = messages.find(m => m.role === 'system')!.content;
+      expect(systemContent).toContain('## Output Format');
+      expect(systemContent).toContain('## Summary (REQUIRED)');
+    });
+
+    it('does not inject instructions when no handoff template provided', async () => {
+      const assembler = new ContextAssembler({
+        context: new NoopContextProvider(),
+        memory: new NoopMemoryProvider(),
+        codebase: new NoopCodebaseProvider(),
+        persona: new NoopPersonaProvider(),
+      });
+
+      const messages = await assembler.assemble({
+        systemPrompt: 'You are a developer.',
+        task: 'Build a feature',
+        contextWindow: 100000,
+      });
+
+      const systemContent = messages.find(m => m.role === 'system')!.content;
+      expect(systemContent).not.toContain('## Output Format');
+    });
+  });
+
+  describe('feedback context', () => {
+    it('injects feedback context at high priority', async () => {
+      const assembler = new ContextAssembler({
+        context: new NoopContextProvider(),
+        memory: new NoopMemoryProvider(),
+        codebase: new NoopCodebaseProvider(),
+        persona: new NoopPersonaProvider(),
+      });
+
+      const messages = await assembler.assemble({
+        systemPrompt: 'You are a developer.',
+        task: 'Build a feature',
+        contextWindow: 100000,
+        feedbackContext: {
+          iteration: 2,
+          maxRetries: 3,
+          previousFeedback: 'Missing error handling in the auth module.',
+          feedbackHistory: ['Incomplete implementation.', 'Missing error handling in the auth module.'],
+        },
+      });
+
+      const systemContent = messages.find(m => m.role === 'system')!.content;
+      expect(systemContent).toContain('## Retry Feedback');
+      expect(systemContent).toContain('Attempt 2 of 3');
+      expect(systemContent).toContain('Missing error handling in the auth module.');
+    });
+
+    it('does not inject feedback when not provided', async () => {
+      const assembler = new ContextAssembler({
+        context: new NoopContextProvider(),
+        memory: new NoopMemoryProvider(),
+        codebase: new NoopCodebaseProvider(),
+        persona: new NoopPersonaProvider(),
+      });
+
+      const messages = await assembler.assemble({
+        systemPrompt: 'You are a developer.',
+        task: 'Build a feature',
+        contextWindow: 100000,
+      });
+
+      const systemContent = messages.find(m => m.role === 'system')!.content;
+      expect(systemContent).not.toContain('## Retry Feedback');
+    });
+
+    it('includes feedback history when multiple attempts', async () => {
+      const assembler = new ContextAssembler({
+        context: new NoopContextProvider(),
+        memory: new NoopMemoryProvider(),
+        codebase: new NoopCodebaseProvider(),
+        persona: new NoopPersonaProvider(),
+      });
+
+      const messages = await assembler.assemble({
+        systemPrompt: 'You are a developer.',
+        task: 'Build a feature',
+        contextWindow: 100000,
+        feedbackContext: {
+          iteration: 3,
+          maxRetries: 5,
+          previousFeedback: 'Still missing validation.',
+          feedbackHistory: ['No tests.', 'Missing auth.', 'Still missing validation.'],
+        },
+      });
+
+      const systemContent = messages.find(m => m.role === 'system')!.content;
+      expect(systemContent).toContain('### Feedback History');
+      expect(systemContent).toContain('1. No tests.');
+      expect(systemContent).toContain('2. Missing auth.');
+      expect(systemContent).toContain('3. Still missing validation.');
+    });
+  });
 });

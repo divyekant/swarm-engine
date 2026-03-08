@@ -141,7 +141,22 @@ export function validateDAG(
     }
   }
 
-  // 1c. Regular edge endpoint validation
+  // 1c. Feedback edge validation
+  if (dag.feedbackEdges) {
+    for (const fe of dag.feedbackEdges) {
+      if (!nodeIds.has(fe.from)) {
+        errors.push(`Feedback edge source "${fe.from}" does not exist in the DAG`);
+      }
+      if (!nodeIds.has(fe.to)) {
+        errors.push(`Feedback edge target "${fe.to}" does not exist in the DAG`);
+      }
+      if (fe.escalation?.reroute && !nodeIds.has(fe.escalation.reroute)) {
+        errors.push(`Feedback edge escalation reroute "${fe.escalation.reroute}" does not exist in the DAG`);
+      }
+    }
+  }
+
+  // 1d. Regular edge endpoint validation
   for (const edge of dag.edges) {
     if (!nodeIds.has(edge.from)) {
       errors.push(`Edge source "${edge.from}" does not exist in the DAG`);
@@ -185,6 +200,19 @@ export function validateDAG(
           errors.push(
             `Conditional edge from "${ce.from}" references provider "${ce.evaluate.providerId}" which does not exist in config`,
           );
+        }
+      }
+    }
+
+    // Also check feedback edge evaluators that reference providers
+    if (dag.feedbackEdges) {
+      for (const fe of dag.feedbackEdges) {
+        if (fe.evaluate.type === 'llm' && fe.evaluate.providerId !== undefined) {
+          if (!(fe.evaluate.providerId in providers)) {
+            errors.push(
+              `Feedback edge from "${fe.from}" references provider "${fe.evaluate.providerId}" which does not exist in config`,
+            );
+          }
         }
       }
     }

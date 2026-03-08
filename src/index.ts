@@ -51,5 +51,17 @@ export type {
 // Logging
 export { Logger } from './logger.js';
 
+// Handoffs
+export { HANDOFF_PRESETS, getHandoffTemplate } from './handoffs/templates.js';
+export { formatHandoffInstructions, formatHandoffOutput } from './handoffs/formatter.js';
+
+// Guards
+export { runGuards } from './guards/runner.js';
+export type { GuardResult } from './guards/runner.js';
+export { evidenceGuard } from './guards/evidence.js';
+export type { EvidenceResult } from './guards/evidence.js';
+export { scopeCreepGuard } from './guards/scope-creep.js';
+export type { ScopeCreepResult } from './guards/scope-creep.js';
+
 // Types
 export type * from './types.js';
