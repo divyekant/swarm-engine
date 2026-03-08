@@ -14,6 +14,7 @@ export interface ConditionalEdgeConfig {
 
 export interface EdgeOptions {
   maxCycles?: number;
+  handoff?: string | import('../types.js').HandoffTemplate;
 }
 
 /**
@@ -48,6 +49,9 @@ export class DAGBuilder {
     const edge: DAGEdge = { from, to };
     if (options?.maxCycles !== undefined) {
       edge.maxCycles = options.maxCycles;
+    }
+    if (options?.handoff !== undefined) {
+      edge.handoff = options.handoff;
     }
     this.edges.push(edge);
     return this;
