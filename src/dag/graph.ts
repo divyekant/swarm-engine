@@ -1,4 +1,4 @@
-import type { DAGDefinition, DAGNode, DAGEdge, ConditionalEdge } from '../types.js';
+import type { DAGDefinition, DAGNode, DAGEdge, ConditionalEdge, FeedbackEdge } from '../types.js';
 
 /**
  * Runtime wrapper around a DAGDefinition providing traversal helpers.
@@ -7,6 +7,7 @@ export class DAGGraph {
   nodes: DAGNode[];
   edges: DAGEdge[];
   readonly conditionalEdges: ConditionalEdge[];
+  readonly feedbackEdges: FeedbackEdge[];
   readonly dynamicNodes: string[];
   readonly id: string;
 
@@ -15,6 +16,7 @@ export class DAGGraph {
     this.nodes = definition.nodes;
     this.edges = definition.edges;
     this.conditionalEdges = definition.conditionalEdges;
+    this.feedbackEdges = definition.feedbackEdges ?? [];
     this.dynamicNodes = definition.dynamicNodes;
   }
 
@@ -36,6 +38,11 @@ export class DAGGraph {
   /** Return all conditional edges originating from the given node. */
   getConditionalEdges(nodeId: string): ConditionalEdge[] {
     return this.conditionalEdges.filter((e) => e.from === nodeId);
+  }
+
+  /** Return all feedback edges originating from the given node. */
+  getFeedbackEdges(fromNodeId: string): FeedbackEdge[] {
+    return this.feedbackEdges.filter(fe => fe.from === fromNodeId);
   }
 
   /** Return root nodes -- nodes with no incoming edges. */

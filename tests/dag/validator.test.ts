@@ -23,6 +23,7 @@ function simpleDag(overrides?: Partial<DAGDefinition>): DAGDefinition {
     ],
     edges: [{ from: 'a', to: 'b' }],
     conditionalEdges: [],
+    feedbackEdges: [],
     dynamicNodes: [],
     ...overrides,
   };
@@ -359,6 +360,7 @@ describe('validateDAG', () => {
           targets: { pass: 'b' },
         },
       ],
+      feedbackEdges: [],
       dynamicNodes: [],
     };
 
@@ -381,6 +383,7 @@ describe('validateDAG', () => {
           targets: { pass: 'ghost' },
         },
       ],
+      feedbackEdges: [],
       dynamicNodes: [],
     };
 

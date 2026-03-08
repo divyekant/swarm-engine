@@ -153,6 +153,21 @@ export interface FeedbackContext {
   feedbackHistory: string[];
 }
 
+export interface FeedbackEdge {
+  from: string;
+  to: string;
+  maxRetries: number;
+  evaluate: Evaluator;
+  passLabel: string;
+  escalation?: EscalationPolicy;
+}
+
+export interface EscalationPolicy {
+  action: 'skip' | 'fail' | 'reroute';
+  reroute?: string;
+  message?: string;
+}
+
 export interface ConditionalEdge {
   from: string;
   evaluate: Evaluator;
@@ -313,6 +328,7 @@ export interface DAGDefinition {
   nodes: DAGNode[];
   edges: DAGEdge[];
   conditionalEdges: ConditionalEdge[];
+  feedbackEdges: FeedbackEdge[];
   dynamicNodes: string[];
 }
 
