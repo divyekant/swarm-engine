@@ -17,6 +17,8 @@ export interface AgenticRunnerParams {
   memory: SwarmMemory;
   upstreamOutputs?: { nodeId: string; agentRole: string; output: string }[];
   signal?: AbortSignal;
+  handoffTemplate?: import('../types.js').HandoffTemplate;
+  feedbackContext?: import('../types.js').FeedbackContext;
 }
 
 /**

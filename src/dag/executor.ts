@@ -8,6 +8,7 @@ import { DAGGraph } from './graph.js';
 import { Scheduler } from './scheduler.js';
 import { evaluate } from '../agent/evaluator.js';
 import { Logger } from '../logger.js';
+import { getHandoffTemplate } from '../handoffs/templates.js';
 
 export interface ExecutorLimits {
   maxConcurrentAgents?: number;
@@ -257,6 +258,9 @@ export class DAGExecutor {
       this.logger.debug('Upstream outputs wired', { nodeId, upstreamNodeIds: upstreamOutputs.map(u => u.nodeId) });
     }
 
+    // Resolve handoff template from outgoing edges
+    const handoffTemplate = this.getNodeHandoffTemplate(nodeId);
+
     const startTime = Date.now();
 
     // Persistence: create run record
@@ -277,6 +281,7 @@ export class DAGExecutor {
             memory: this.memory,
             upstreamOutputs,
             signal: this.signal,
+            handoffTemplate,
           })
         : this.runner.run({
             nodeId,
@@ -285,6 +290,7 @@ export class DAGExecutor {
             memory: this.memory,
             upstreamOutputs,
             signal: this.signal,
+            handoffTemplate,
           });
 
       for await (const event of eventSource) {
@@ -420,6 +426,10 @@ export class DAGExecutor {
       }
 
       const upstreamOutputs = this.getUpstreamOutputs(nodeId, outputs);
+
+      // Resolve handoff template from outgoing edges
+      const handoffTemplate = this.getNodeHandoffTemplate(nodeId);
+
       const startTime = Date.now();
 
       // Persistence: create run record
@@ -438,6 +448,7 @@ export class DAGExecutor {
               memory: this.memory,
               upstreamOutputs,
               signal: this.signal,
+              handoffTemplate,
             })
           : this.runner.run({
               nodeId,
@@ -446,6 +457,7 @@ export class DAGExecutor {
               memory: this.memory,
               upstreamOutputs,
               signal: this.signal,
+              handoffTemplate,
             });
 
         for await (const event of eventSource) {
@@ -569,6 +581,20 @@ export class DAGExecutor {
 
     // Emit a single progress event after the entire parallel batch
     yield this.progressEvent(scheduler, completedNodeIds);
+  }
+
+  /**
+   * Resolve the handoff template from a node's outgoing edges.
+   * Returns the first resolved HandoffTemplate found, or undefined if none.
+   */
+  private getNodeHandoffTemplate(nodeId: string): import('../types.js').HandoffTemplate | undefined {
+    const outgoing = this.graph.getOutgoingEdges(nodeId);
+    for (const edge of outgoing) {
+      if (edge.handoff) {
+        return getHandoffTemplate(edge.handoff);
+      }
+    }
+    return undefined;
   }
 
   /**
