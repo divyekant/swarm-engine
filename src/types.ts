@@ -85,7 +85,9 @@ export type SwarmEvent =
   | { type: 'budget_warning'; used: number; limit: number; percentUsed: number }
   | { type: 'budget_exceeded'; used: number; limit: number }
   | { type: 'feedback_retry'; fromNode: string; toNode: string; iteration: number; maxRetries: number }
-  | { type: 'feedback_escalation'; fromNode: string; toNode: string; policy: EscalationPolicy; iteration: number };
+  | { type: 'feedback_escalation'; fromNode: string; toNode: string; policy: EscalationPolicy; iteration: number }
+  | { type: 'guard_warning'; nodeId: string; guardId: string; guardType: string; message: string }
+  | { type: 'guard_blocked'; nodeId: string; guardId: string; guardType: string; message: string };
 
 export type AgentErrorType =
   | 'timeout'
@@ -128,6 +130,7 @@ export interface DAGNode {
   agent: AgentDescriptor;
   task?: string;
   canEmitDAG?: boolean;
+  guards?: Guard[];
 }
 
 export interface DAGEdge {
@@ -170,6 +173,13 @@ export interface EscalationPolicy {
   message?: string;
 }
 
+export interface Guard {
+  id: string;
+  type: 'scope-creep' | 'evidence' | string;
+  mode: 'warn' | 'block';
+  config?: Record<string, unknown>;
+}
+
 export interface ConditionalEdge {
   from: string;
   evaluate: Evaluator;
@@ -210,6 +220,7 @@ export interface SwarmEngineConfig {
   defaults?: EngineDefaults;
   limits?: EngineLimits;
   logging?: LoggingConfig;
+  guards?: Guard[];
 }
 
 export interface EngineDefaults {
