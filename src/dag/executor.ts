@@ -1,4 +1,4 @@
-import type { SwarmEvent, NodeResult, CostSummary, ProviderAdapter, PersistenceAdapter, LifecycleHooks, EscalationPolicy } from '../types.js';
+import type { SwarmEvent, NodeResult, CostSummary, ProviderAdapter, PersistenceAdapter, LifecycleHooks, EscalationPolicy, Guard } from '../types.js';
 import type { AgentRunner } from '../agent/runner.js';
 import type { AgenticRunner } from '../agent/agentic-runner.js';
 import type { AgenticAdapter } from '../adapters/agentic/types.js';
@@ -7,6 +7,7 @@ import type { SwarmMemory } from '../memory/index.js';
 import { DAGGraph } from './graph.js';
 import { Scheduler } from './scheduler.js';
 import { evaluate } from '../agent/evaluator.js';
+import { runGuards } from '../guards/runner.js';
 import { Logger } from '../logger.js';
 import { getHandoffTemplate } from '../handoffs/templates.js';
 
@@ -47,6 +48,7 @@ export class DAGExecutor {
   private readonly lifecycle?: LifecycleHooks;
   private readonly dagId: string;
   private readonly logger: Logger;
+  private readonly defaultGuards: Guard[];
 
   /** Maps nodeId -> runId for persistence tracking. */
   private readonly runIds = new Map<string, string>();
@@ -78,6 +80,7 @@ export class DAGExecutor {
     persistence?: PersistenceAdapter,
     lifecycle?: LifecycleHooks,
     logger?: Logger,
+    defaultGuards?: Guard[],
   ) {
     this.graph = graph;
     this.runner = runner;
@@ -94,6 +97,7 @@ export class DAGExecutor {
     this.lifecycle = lifecycle;
     this.dagId = graph.id;
     this.logger = logger ?? new Logger();
+    this.defaultGuards = defaultGuards ?? [];
     this.startTime = Date.now();
 
     // Pre-compute the set of nodes that are targets of conditional edges.
@@ -336,6 +340,48 @@ export class DAGExecutor {
       }
 
       if (lastDoneEvent) {
+        // Run guards before marking completed
+        const nodeGuards = node.guards ?? (this.defaultGuards.length > 0 ? this.defaultGuards : undefined);
+        if (nodeGuards && nodeGuards.length > 0) {
+          const guardResults = await runGuards(
+            nodeGuards,
+            node.task ?? this.task,
+            lastDoneEvent.output,
+            this.provider,
+          );
+
+          let blocked = false;
+          for (const gr of guardResults) {
+            if (gr.triggered) {
+              if (gr.blocked) {
+                yield {
+                  type: 'guard_blocked' as const,
+                  nodeId,
+                  guardId: gr.guardId,
+                  guardType: gr.guardType,
+                  message: gr.message,
+                };
+                blocked = true;
+              } else {
+                yield {
+                  type: 'guard_warning' as const,
+                  nodeId,
+                  guardId: gr.guardId,
+                  guardType: gr.guardType,
+                  message: gr.message,
+                };
+              }
+            }
+          }
+
+          if (blocked) {
+            scheduler.markFailed(nodeId);
+            this.skipDownstream(nodeId, scheduler);
+            yield this.progressEvent(scheduler, completedNodeIds);
+            return;
+          }
+        }
+
         scheduler.markCompleted(nodeId);
         completedNodeIds.push(nodeId);
         outputs.set(nodeId, {
@@ -511,6 +557,47 @@ export class DAGExecutor {
         }
 
         if (lastDoneEvent) {
+          // Run guards before marking completed
+          const nodeGuards = node.guards ?? (this.defaultGuards.length > 0 ? this.defaultGuards : undefined);
+          if (nodeGuards && nodeGuards.length > 0) {
+            const guardResults = await runGuards(
+              nodeGuards,
+              node.task ?? this.task,
+              lastDoneEvent.output,
+              this.provider,
+            );
+
+            let blocked = false;
+            for (const gr of guardResults) {
+              if (gr.triggered) {
+                if (gr.blocked) {
+                  events.push({
+                    type: 'guard_blocked' as const,
+                    nodeId,
+                    guardId: gr.guardId,
+                    guardType: gr.guardType,
+                    message: gr.message,
+                  });
+                  blocked = true;
+                } else {
+                  events.push({
+                    type: 'guard_warning' as const,
+                    nodeId,
+                    guardId: gr.guardId,
+                    guardType: gr.guardType,
+                    message: gr.message,
+                  });
+                }
+              }
+            }
+
+            if (blocked) {
+              scheduler.markFailed(nodeId);
+              this.skipDownstream(nodeId, scheduler);
+              return { nodeId, events };
+            }
+          }
+
           scheduler.markCompleted(nodeId);
           completedNodeIds.push(nodeId);
           outputs.set(nodeId, {
