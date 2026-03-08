@@ -146,6 +146,13 @@ export interface HandoffSection {
   required?: boolean;
 }
 
+export interface FeedbackContext {
+  iteration: number;
+  maxRetries: number;
+  previousFeedback: string;
+  feedbackHistory: string[];
+}
+
 export interface ConditionalEdge {
   from: string;
   evaluate: Evaluator;
