@@ -23,6 +23,10 @@ export function formatHandoffInstructions(template: HandoffTemplate): string {
  * Format a node's raw output for downstream consumption.
  * Wraps with agent identity header. The raw output is passed through —
  * the template was used to shape it at generation time, not parse it after.
+ *
+ * Note: Not used internally by the engine (upstream outputs are formatted
+ * inline by ContextAssembler). Exported as a consumer utility for applications
+ * that need to format handoff outputs outside the engine pipeline.
  */
 export function formatHandoffOutput(
   _template: HandoffTemplate,
