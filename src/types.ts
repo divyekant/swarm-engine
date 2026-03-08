@@ -132,6 +132,18 @@ export interface DAGEdge {
   from: string;
   to: string;
   maxCycles?: number;
+  handoff?: string | HandoffTemplate;
+}
+
+export interface HandoffTemplate {
+  id: string;
+  sections: HandoffSection[];
+}
+
+export interface HandoffSection {
+  key: string;
+  label: string;
+  required?: boolean;
 }
 
 export interface ConditionalEdge {
