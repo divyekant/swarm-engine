@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.2.0] - 2026-03-08
 
 ### Added
 - **Handoff Templates**: Structured output formatting between nodes via edge configuration. Built-in presets: `standard`, `qa-review`, `qa-feedback`, `escalation`. Custom templates supported inline or by name.
