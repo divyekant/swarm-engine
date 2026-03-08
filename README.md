@@ -11,6 +11,9 @@ Multi-agent DAG orchestration engine for TypeScript. Define agents as nodes, wir
 - **Cost tracking** — per-agent and per-swarm token usage with budget enforcement
 - **Streaming events** — real-time `AsyncGenerator` events for UI and logging
 - **Pluggable adapters** — persistence, memory, context, codebase, persona, lifecycle hooks
+- **Handoff templates** — structured output formatting between nodes with built-in presets
+- **Feedback edges** — engine-managed retry loops with escalation policies
+- **Anti-pattern guards** — post-completion output quality checks (evidence, scope creep)
 - **TypeScript-first** — strict mode, full type definitions, ESM
 
 ## Install
@@ -172,6 +175,108 @@ Every `engine.run()` yields typed events:
 | `loop_iteration` | Loop cycle started |
 | `budget_warning` | Approaching token budget limit |
 | `budget_exceeded` | Token budget exceeded |
+| `feedback_retry` | Feedback loop: re-running producer with reviewer feedback |
+| `feedback_escalation` | Feedback loop: max retries exhausted, escalation triggered |
+| `guard_warning` | Guard triggered in warn mode |
+| `guard_blocked` | Guard triggered in block mode |
+
+## Handoff Templates
+
+Shape the output format between connected nodes using built-in presets or custom templates. The template injects formatting instructions into the producing agent's system prompt.
+
+```ts
+// Use a built-in preset: 'standard', 'qa-review', 'qa-feedback', 'escalation'
+engine.dag()
+  .agent('developer', devAgent)
+  .agent('reviewer', reviewAgent)
+  .edge('developer', 'reviewer', { handoff: 'qa-review' })
+  .build();
+
+// Or define a custom template inline
+engine.dag()
+  .agent('researcher', researchAgent)
+  .agent('writer', writerAgent)
+  .edge('researcher', 'writer', {
+    handoff: {
+      id: 'research-handoff',
+      sections: [
+        { key: 'findings', label: 'Key Findings', required: true },
+        { key: 'sources', label: 'Sources', required: true },
+        { key: 'gaps', label: 'Knowledge Gaps' },
+      ],
+    },
+  })
+  .build();
+```
+
+## Feedback Edges
+
+Set up engine-managed retry loops where a reviewer node can send work back to a producer. The engine tracks iteration count, injects previous feedback into the producer's context, and escalates when retries are exhausted.
+
+```ts
+const dag = engine.dag()
+  .agent('developer', devAgent)
+  .agent('qa', qaAgent)
+  .agent('senior', seniorAgent)
+  .edge('developer', 'qa', { handoff: 'qa-review' })
+  .feedbackEdge({
+    from: 'qa',
+    to: 'developer',
+    maxRetries: 3,
+    evaluate: {
+      type: 'rule',
+      fn: (output) => output.toLowerCase().includes('approve') ? 'pass' : 'fail',
+    },
+    passLabel: 'pass',
+    escalation: { action: 'reroute', reroute: 'senior' },
+  })
+  .build();
+```
+
+Events emitted during feedback loops:
+
+| Event | Description |
+|---|---|
+| `feedback_retry` | QA rejected; re-running producer with feedback injected |
+| `feedback_escalation` | Max retries exhausted; escalation policy triggered |
+
+## Anti-Pattern Guards
+
+Guards run after a node completes and check output quality. Each guard operates in `warn` mode (emit event, continue) or `block` mode (emit event, halt the node).
+
+### Per-Node Guards
+
+```ts
+engine.dag()
+  .agent('developer', {
+    ...devAgent,
+    guards: [
+      { id: 'no-empty-claims', type: 'evidence', mode: 'block' },
+      { id: 'stay-on-task', type: 'scope-creep', mode: 'warn' },
+    ],
+  })
+  .build();
+```
+
+### Engine-Wide Guards
+
+Apply guards to every node in the DAG:
+
+```ts
+const engine = new SwarmEngine({
+  providers: { /* ... */ },
+  guards: [
+    { id: 'global-evidence', type: 'evidence', mode: 'warn' },
+  ],
+});
+```
+
+Guard events:
+
+| Event | Description |
+|---|---|
+| `guard_warning` | Guard triggered in `warn` mode — output passed through |
+| `guard_blocked` | Guard triggered in `block` mode — node output rejected |
 
 ## Configuration
 
