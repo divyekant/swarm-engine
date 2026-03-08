@@ -49,6 +49,13 @@ SwarmEngine is a multi-agent DAG orchestration engine for TypeScript. Define AI 
 - **Built-in monitoring dashboard** — real-time SSE event stream
 - **Structured logging** — scoped child loggers for per-component context
 
+### Quality Guardrails
+
+- **Handoff Templates** — structured output formatting between agents with 4 built-in presets (standard, QA review, QA feedback, escalation) and custom template support
+- **Feedback Loops** — engine-managed revision cycles where a reviewing agent provides targeted feedback and the original agent automatically revises until approved or escalated
+- **Anti-Pattern Guards** — automatic output quality checks that catch unsupported claims (pattern-based, no extra AI cost) and scope creep (lightweight AI check), configurable as warn or block per-agent or engine-wide
+- **Graceful escalation** — configurable retry limits with automatic escalation policies (skip, fail, or reroute) so workflows never get stuck
+
 ### Extensibility
 
 - **7 pluggable adapter interfaces** — swap any component without changing workflow code

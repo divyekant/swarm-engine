@@ -1,8 +1,8 @@
 # Hermes Documentation Index
 
-Generated: 2026-02-28 | Source: direct | Hermes v1.0.0
+Generated: 2026-03-08 | Source: direct | Hermes v1.0.0
 
-## Internal (23 docs)
+## Internal (31 docs)
 
 | ID | Type | Topic | Generated |
 |----|------|-------|-----------|
@@ -27,10 +27,16 @@ Generated: 2026-02-28 | Source: direct | Hermes v1.0.0
 | ts-002 | Troubleshooting | Budget Exceeded | 2026-02-28 |
 | ts-003 | Troubleshooting | Provider & Auth Errors | 2026-02-28 |
 | ts-004 | Troubleshooting | Agentic Backend Issues | 2026-02-28 |
-| faq | FAQ | All | 2026-02-28 |
-| glossary | Glossary | All | 2026-02-28 |
+| fh-011 | Feature Handoff | Handoff Templates | 2026-03-08 |
+| fh-012 | Feature Handoff | Feedback Loops | 2026-03-08 |
+| fh-013 | Feature Handoff | Anti-Pattern Guards | 2026-03-08 |
+| uc-007 | Use Case | Dev-QA Feedback Loop | 2026-03-08 |
+| uc-008 | Use Case | Output Quality Guards | 2026-03-08 |
+| ts-005 | Troubleshooting | Guards & Feedback Loops | 2026-03-08 |
+| faq | FAQ | All | 2026-03-08 |
+| glossary | Glossary | All | 2026-03-08 |
 
-## External (10 docs)
+## External (13 docs)
 
 | ID | Type | Topic | Generated |
 |----|------|-------|-----------|
@@ -43,9 +49,15 @@ Generated: 2026-02-28 | Source: direct | Hermes v1.0.0
 | api-ref | API Reference | All | 2026-02-28 |
 | config-ref | Config Reference | All | 2026-02-28 |
 | error-ref | Error Reference | All | 2026-02-28 |
-| changelog | Changelog | All | 2026-02-28 |
+| feat-006 | Feature Doc | Handoff Templates | 2026-03-08 |
+| feat-007 | Feature Doc | Feedback Loops | 2026-03-08 |
+| feat-008 | Feature Doc | Anti-Pattern Guards | 2026-03-08 |
+| api-ref | API Reference | All | 2026-03-08 |
+| config-ref | Config Reference | All | 2026-03-08 |
+| error-ref | Error Reference | All | 2026-03-08 |
+| changelog | Changelog | All | 2026-03-08 |
 
-## Marketing (9 docs)
+## Marketing (12 docs)
 
 | ID | Type | Topic | Generated |
 |----|------|-------|-----------|
@@ -58,3 +70,6 @@ Generated: 2026-02-28 | Source: direct | Hermes v1.0.0
 | ra-v0.1.6 | Release Announcement | v0.1.6 | 2026-02-28 |
 | op-001 | One-Pager | SwarmEngine | 2026-02-28 |
 | op-002 | One-Pager | Agentic Backends | 2026-02-28 |
+| fb-006 | Feature Brief | Handoff Templates | 2026-03-08 |
+| fb-007 | Feature Brief | Feedback & Guards | 2026-03-08 |
+| op-003 | One-Pager | Quality Guardrails | 2026-03-08 |

@@ -218,6 +218,115 @@ Before this error, you will typically see a `budget_warning` event that tells yo
 
 ---
 
+## Handoff template errors
+
+### Unknown handoff preset
+
+**What happened:** You passed a string to the `handoff` option on an edge, but it does not match any of the four built-in presets (`standard`, `qa-review`, `qa-feedback`, `escalation`).
+
+**Resolution:**
+- Check the preset name for typos. Preset names are case-sensitive.
+- If you need a custom handoff, pass an inline `HandoffTemplate` object instead of a string.
+
+**Example:**
+
+```typescript
+// This will throw at build time:
+.edge('dev', 'qa', { handoff: 'detailedReview' })
+// Error: Unknown handoff preset: "detailedReview". Available presets: standard, qa-review, qa-feedback, escalation.
+
+// Fix: use a valid preset name or an inline template
+.edge('dev', 'qa', { handoff: 'qa-review' })
+```
+
+---
+
+## Feedback edge errors
+
+### Missing required fields
+
+**What happened:** A feedback edge is missing one or more required fields (`from`, `to`, `maxRetries`, `evaluate`, `passLabel`, `escalation`).
+
+**Resolution:**
+- Ensure all required fields are present in your `.feedbackEdge()` call. See the [Configuration Reference](config-reference.md) for the full list.
+
+**Example:**
+
+```typescript
+// This will throw at build time:
+.feedbackEdge({ from: 'qa', to: 'dev', maxRetries: 3 })
+// Error: FeedbackEdge missing required fields: evaluate, passLabel, escalation
+```
+
+### Invalid feedback edge nodes
+
+**What happened:** The `from` or `to` node in a feedback edge does not exist in the DAG, or the `from` node is not downstream of the `to` node (i.e., there is no forward path from `to` to `from`).
+
+**Resolution:**
+- Verify that both node IDs exist in the DAG.
+- Ensure there is a forward edge path from the `to` node to the `from` node. A feedback edge creates a backward connection for retry purposes, so the forward path must already exist.
+
+**Example:**
+
+```typescript
+// This will throw at build time:
+.feedbackEdge({ from: 'reviewer', to: 'dev', ... })
+// Error: Feedback edge references unknown node: "reviewer"
+```
+
+### maxRetries must be at least 1
+
+**What happened:** You set `maxRetries` to 0 or a negative number on a feedback edge.
+
+**Resolution:**
+- Set `maxRetries` to at least 1. If you do not want retries, do not use a feedback edge.
+
+---
+
+## Guard errors
+
+### Guard blocked execution
+
+**What happened:** A guard with `mode: 'block'` detected a quality issue in a node's output. The node is treated as failed, and downstream nodes that depend on it are skipped.
+
+This is not an engine bug -- it means the guard is working as intended. The `guard_blocked` event contains details about what triggered the guard.
+
+**Resolution:**
+- Review the `message` field in the `guard_blocked` event to understand what the guard detected.
+- For the `evidence` guard: ensure the agent includes supporting evidence (code blocks, file paths, test output) alongside its claims.
+- For the `scope-creep` guard: refine the agent's system prompt to stay focused on the task.
+- If the guard is too aggressive for your use case, switch its mode from `'block'` to `'warn'`.
+
+**Example event:**
+
+```typescript
+{
+  type: 'guard_blocked',
+  nodeId: 'dev',
+  guardId: 'evidence',
+  guardType: 'evidence',
+  message: 'Output contains claims without evidence: "all tests pass" with no test output shown',
+}
+```
+
+### Guard warning
+
+**What happened:** A guard with `mode: 'warn'` detected a potential quality issue. Execution continues, but you should review the output.
+
+**Example event:**
+
+```typescript
+{
+  type: 'guard_warning',
+  nodeId: 'dev',
+  guardId: 'scope',
+  guardType: 'scope-creep',
+  message: 'Output may contain work beyond task scope: refactored authentication module (not requested)',
+}
+```
+
+---
+
 ## Handling errors in your code
 
 You can handle errors inline in your event loop:

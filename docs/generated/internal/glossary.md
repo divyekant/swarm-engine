@@ -199,11 +199,31 @@ All terms are specific to the swarm-engine project (`@swarmengine/core`). Ordere
 
 ---
 
+### EscalationPolicy
+
+**Definition:** A configuration object that determines what happens when a feedback loop exhausts its `maxRetries` without the reviewer approving the producer's output. Three actions are available: `skip` (accept the producer's last output and proceed downstream), `fail` (mark the producer node as failed, triggering `skipDownstream` for dependents), or `reroute` (redirect execution to an alternative node specified by the `reroute` field). An optional `message` field is included in the `feedback_escalation` event.
+
+**Context:** Part of the `FeedbackEdge` definition. If omitted, the default policy is `{ action: 'fail' }`. The `reroute` target must reference a valid node in the DAG (validated at build time). Defined in `src/types.ts`.
+
+**Not to be confused with:** Error handling escalation, which is a consumer-side concern. `EscalationPolicy` is engine-managed and operates within the feedback loop.
+
+---
+
+### Evidence Guard
+
+**Definition:** A fast, LLM-free output quality guard that detects unsubstantiated claims in agent output. It scans for 9 claim patterns (e.g., "all tests pass", "no issues found", "works correctly") and 6 evidence patterns (code blocks, shell commands, file paths, test indicators, test counts, error outputs). The guard triggers when claims are found but no evidence is present. Runs locally with no external calls.
+
+**Context:** One of two built-in guard types. Configured via `Guard` with `type: 'evidence'`. Always runs before Scope Creep Guard in the guard runner's execution order. Defined in `src/guards/evidence.ts`.
+
+**Not to be confused with:** Scope Creep Guard, which uses an LLM call for semantic analysis.
+
+---
+
 ### Evaluator
 
 **Definition:** A discriminated union type that determines how conditional routing decisions are made. Three variants: `rule` (a synchronous function mapping output to a target label), `regex` (a pattern test returning `matchTarget` or `elseTarget`), and `llm` (sends output to a cheap LLM to determine the target label).
 
-**Context:** Used within `ConditionalEdge` definitions. Executed by the `evaluate()` function in `src/agent/evaluator.ts`. Defined in `src/types.ts`.
+**Context:** Used within `ConditionalEdge` and `FeedbackEdge` definitions. Executed by the `evaluate()` function in `src/agent/evaluator.ts`. Defined in `src/types.ts`.
 
 ---
 
@@ -224,6 +244,54 @@ All terms are specific to the swarm-engine project (`@swarmengine/core`). Ordere
 **Context:** Created naturally when a single source node has multiple outgoing edges. The `DAGExecutor` launches all ready nodes simultaneously via `runNodesParallel()`. No special API is needed.
 
 **Not to be confused with:** `FanIn`, which is the inverse pattern.
+
+---
+
+### FeedbackContext
+
+**Definition:** A structured object injected into a producer node's context during a feedback loop retry. Contains the current `iteration` number (1-indexed), `maxRetries` limit, `previousFeedback` (the latest reviewer output), and `feedbackHistory` (all prior reviewer outputs in chronological order). Rendered as a `## Retry Feedback` section in the agent's context.
+
+**Context:** Injected by the `ContextAssembler` at priority 1 (same level as system prompt and task -- never truncated). Placed after the system prompt and before upstream outputs. Only present when a node is being retried within a feedback loop. Defined in `src/types.ts`.
+
+**Not to be confused with:** Upstream outputs, which are injected at priority 2. `FeedbackContext` has higher priority to ensure the agent always sees the retry feedback.
+
+---
+
+### FeedbackEdge
+
+**Definition:** A directed edge that creates an engine-managed retry loop between a reviewer node and a producer node. When the reviewer's output does not match the `passLabel` according to the configured `Evaluator`, the producer node is reset and re-executed with feedback injected. Contains `from` (reviewer node ID), `to` (producer node ID), `maxRetries`, `evaluate` (an `Evaluator`), `passLabel`, and an optional `EscalationPolicy`.
+
+**Context:** Added via `DAGBuilder.feedbackEdge()`. Stored in `DAGDefinition.feedbackEdges`. Evaluated by `DAGExecutor` after the reviewer node completes. Uses the same `Evaluator` types as `ConditionalEdge`. Defined in `src/types.ts`.
+
+**Not to be confused with:** Cycle edges (regular `DAGEdge` with `maxCycles`), which implement simple loops without structured feedback injection.
+
+---
+
+### Guard
+
+**Definition:** A post-completion output quality check that analyzes agent output for problematic patterns before passing results downstream. Each guard has an `id`, a `type` (e.g., `'evidence'` or `'scope-creep'`), a `mode` (`'warn'` emits an event and continues, `'block'` emits an event and fails the node), and an optional `config` object for guard-specific settings.
+
+**Context:** Configured per-node via `DAGNode.guards` or engine-wide via `SwarmEngineConfig.guards`. Node-level guards completely replace engine-wide guards (no merging). Executed by the guard runner after node completion. Defined in `src/types.ts`.
+
+**Not to be confused with:** `Evaluator`, which routes based on output content. Guards assess output quality and either warn or block.
+
+---
+
+### HandoffSection
+
+**Definition:** A single section within a `HandoffTemplate`. Contains a `key` (machine identifier used for deduplication), a `label` (human-readable heading injected into the agent's output format instructions), and an optional `required` flag (defaults to false). When `required` is true, the section heading in the output format instructions is annotated with "(required)".
+
+**Context:** Part of a `HandoffTemplate.sections` array. The `label` becomes a Markdown heading in the `## Output Format` block injected into the producing agent's system prompt. Defined in `src/types.ts`.
+
+---
+
+### HandoffTemplate
+
+**Definition:** A structured output format specification applied to a DAG edge. Contains an `id` string and an array of `HandoffSection` objects. When assigned to a `DAGEdge.handoff` field, the engine injects corresponding `## Output Format` instructions into the producing agent's system prompt, guiding it to structure its output with labeled sections.
+
+**Context:** Referenced on `DAGEdge.handoff` as either a preset name (string) or an inline object. Four built-in presets exist: `standard`, `qa-review`, `qa-feedback`, and `escalation`. Resolved by the template resolver in `src/handoffs/templates.ts`. Format instructions generated by `src/handoffs/formatter.ts`. Defined in `src/types.ts`.
+
+**Not to be confused with:** Task templates (which provide task instructions), or `HandoffSection` (which is a single section within a template).
 
 ---
 
@@ -347,7 +415,17 @@ All terms are specific to the swarm-engine project (`@swarmengine/core`). Ordere
 
 **Definition:** Tracks node execution statuses within a DAG and determines which nodes are ready to run. Maintains a status map (nodeId -> `NodeStatus`) and cycle counts. Provides methods for querying ready nodes, marking status transitions, resetting nodes for cycles, and registering dynamically added nodes.
 
-**Context:** Created by `DAGExecutor` at the start of each `execute()` call. Governs the execution loop. Defined in `src/dag/scheduler.ts`.
+**Context:** Created by `DAGExecutor` at the start of each `execute()` call. Governs the execution loop. Also handles node status resets for feedback loop retries. Defined in `src/dag/scheduler.ts`.
+
+---
+
+### Scope Creep Guard
+
+**Definition:** An LLM-based output quality guard that evaluates whether an agent's output stays within the bounds of its assigned task. Makes a cheap LLM call (temperature: 0, maxTokens: 100) that classifies the output as `SCOPED` or `OVERSCOPED`. Triggers when the classification is `OVERSCOPED`. Fail-open: silently skipped if no standard LLM provider is available or if the LLM call fails.
+
+**Context:** One of two built-in guard types. Configured via `Guard` with `type: 'scope-creep'`. Runs after Evidence Guard in the guard runner's execution order. Requires at least one standard (non-agentic) LLM provider. Defined in `src/guards/scope-creep.ts`.
+
+**Not to be confused with:** Evidence Guard, which is pattern-based and requires no LLM call.
 
 ---
 

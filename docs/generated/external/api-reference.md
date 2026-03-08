@@ -1019,6 +1019,253 @@ interface MonitorOptions {
 
 ---
 
+### Handoff Templates
+
+#### HandoffTemplate
+
+Defines a structured output format for agent-to-agent handoffs.
+
+```ts
+interface HandoffTemplate {
+  id: string;
+  sections: HandoffSection[];
+}
+```
+
+#### HandoffSection
+
+A single section within a handoff template.
+
+```ts
+interface HandoffSection {
+  key: string;         // Machine-readable key (e.g., 'code').
+  label: string;       // Human-readable label (e.g., 'Code Changes').
+  required?: boolean;  // Whether the agent must include this section.
+}
+```
+
+---
+
+### Feedback Loops
+
+#### FeedbackEdge
+
+Configuration for a feedback loop between two nodes.
+
+```ts
+interface FeedbackEdge {
+  from: string;                // Reviewing node ID.
+  to: string;                  // Node that retries.
+  maxRetries: number;          // Max retry iterations.
+  evaluate: Evaluator;         // How to determine if output passes.
+  passLabel: string;           // Label that ends the loop successfully.
+  escalation: EscalationPolicy;
+}
+```
+
+#### EscalationPolicy
+
+What to do when feedback retries are exhausted.
+
+```ts
+interface EscalationPolicy {
+  action: 'fail' | 'continue';  // 'fail' stops execution; 'continue' proceeds with last output.
+  message?: string;              // Human-readable escalation message.
+}
+```
+
+#### FeedbackContext
+
+Context injected into the retrying node on each feedback iteration.
+
+```ts
+interface FeedbackContext {
+  iteration: number;           // Current retry number (1-based).
+  maxRetries: number;
+  feedback: string;            // Output from the reviewing node.
+  previousOutput: string;      // The retrying node's last output.
+}
+```
+
+---
+
+### Guards
+
+#### GuardConfig
+
+Configuration for an anti-pattern guard.
+
+```ts
+interface GuardConfig {
+  id: string;                                // Unique identifier for this guard instance.
+  type: 'evidence' | 'scope-creep';          // Guard type.
+  mode: 'warn' | 'block';                   // 'warn' emits an event; 'block' fails the node.
+}
+```
+
+#### GuardResult
+
+The result of running a single guard.
+
+```ts
+interface GuardResult {
+  guardId: string;
+  guardType: string;
+  triggered: boolean;
+  mode: 'warn' | 'block';
+  message?: string;
+}
+```
+
+#### EvidenceResult
+
+Result from the `evidenceGuard` function.
+
+```ts
+interface EvidenceResult {
+  triggered: boolean;
+  claims: string[];            // Unsupported claims detected.
+  evidence: string[];          // Evidence found (code blocks, file paths, etc.).
+}
+```
+
+#### ScopeCreepResult
+
+Result from the `scopeCreepGuard` function.
+
+```ts
+interface ScopeCreepResult {
+  triggered: boolean;
+  reason: string;              // Why scope creep was detected (or empty).
+}
+```
+
+---
+
+## Handoff Template Functions
+
+### HANDOFF_PRESETS
+
+```ts
+const HANDOFF_PRESETS: Record<string, HandoffTemplate>
+```
+
+A map of the four built-in handoff presets: `'standard'`, `'qa-review'`, `'qa-feedback'`, and `'escalation'`. Each preset defines a set of labeled sections appropriate for that handoff scenario.
+
+---
+
+### getHandoffTemplate
+
+```ts
+function getHandoffTemplate(nameOrTemplate: string | HandoffTemplate): HandoffTemplate
+```
+
+Resolves a handoff template. If you pass a string, it looks up the preset by name and throws if the preset does not exist. If you pass a `HandoffTemplate` object, it returns it unchanged.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `nameOrTemplate` | `string \| HandoffTemplate` | Preset name or inline template. |
+
+**Returns:** `HandoffTemplate`
+
+---
+
+### formatHandoffInstructions
+
+```ts
+function formatHandoffInstructions(template: HandoffTemplate): string
+```
+
+Generates prompt instruction text for the given template. The returned string tells the agent which sections to produce and which are required. You typically do not need to call this directly -- the engine appends it to the upstream agent's system prompt automatically when a handoff is configured on an edge.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `template` | `HandoffTemplate` | The template to generate instructions for. |
+
+**Returns:** `string`
+
+---
+
+### formatHandoffOutput
+
+```ts
+function formatHandoffOutput(template: HandoffTemplate, rawOutput: string): string
+```
+
+Formats raw agent output according to a template's sections. Extracts content for each section key and restructures it with the template's labels.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `template` | `HandoffTemplate` | The template to format against. |
+| `rawOutput` | `string` | The raw text output from the agent. |
+
+**Returns:** `string`
+
+---
+
+## Guard Functions
+
+### runGuards
+
+```ts
+async function runGuards(
+  output: string,
+  guards: GuardConfig[],
+  context: { task: string; nodeId: string }
+): Promise<GuardResult[]>
+```
+
+Runs all configured guards against an agent's output. Returns an array of results, one per guard. Guards run in the order they are defined.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `output` | `string` | The agent output to check. |
+| `guards` | `GuardConfig[]` | Array of guard configurations. |
+| `context.task` | `string` | The original task for this node. |
+| `context.nodeId` | `string` | The node ID (for logging and events). |
+
+**Returns:** `Promise<GuardResult[]>`
+
+---
+
+### evidenceGuard
+
+```ts
+function evidenceGuard(output: string): EvidenceResult
+```
+
+Checks output for unsupported claims using pattern matching. Detects phrases like "all tests pass" or "works correctly" without accompanying evidence such as code blocks, file paths, or test output. This guard is synchronous and has zero LLM cost.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `output` | `string` | The agent output to check. |
+
+**Returns:** `EvidenceResult`
+
+---
+
+### scopeCreepGuard
+
+```ts
+async function scopeCreepGuard(
+  output: string,
+  task: string,
+  provider: ProviderAdapter
+): Promise<ScopeCreepResult>
+```
+
+Checks output for work beyond the original task scope using an LLM call. Uses a cheap model with `temperature: 0` and `maxTokens: 100` to keep costs minimal.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `output` | `string` | The agent output to check. |
+| `task` | `string` | The original task description. |
+| `provider` | `ProviderAdapter` | The provider adapter to use for the LLM call. |
+
+**Returns:** `Promise<ScopeCreepResult>`
+
+---
+
 ## Default Implementations
 
 The following noop and in-memory implementations are exported for convenience. They allow you to get started without implementing every adapter interface. Replace them with production implementations as your needs grow.

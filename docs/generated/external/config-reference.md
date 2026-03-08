@@ -360,6 +360,137 @@ logging: {
 
 ---
 
+## Edge configuration -- `EdgeOptions`
+
+Options you can pass to `.edge(from, to, options)` on the `DAGBuilder`.
+
+| Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `maxCycles` | `number` | No | `undefined` | Maximum iterations for iterative loops (back-edges). |
+| `handoff` | `string \| HandoffTemplate` | No | `undefined` | Handoff template to apply on this edge. Pass a preset name (`'standard'`, `'qa-review'`, `'qa-feedback'`, `'escalation'`) or an inline `HandoffTemplate` object. When set, the engine appends formatting instructions to the upstream agent's system prompt and structures its output before passing it to the downstream agent. |
+
+### Handoff presets
+
+| Preset | Sections | Use case |
+|---|---|---|
+| `standard` | Summary, Deliverables, Context for Next Step | General-purpose handoffs. |
+| `qa-review` | Deliverables, Test Criteria, Known Limitations | Passing work to a reviewer. |
+| `qa-feedback` | Verdict, Issues Found, Suggestions | Reviewer sending feedback back. |
+| `escalation` | Problem Description, Attempts Made, Recommendation | Escalating to a human or senior agent. |
+
+### Inline handoff template
+
+```typescript
+edge('dev', 'qa', {
+  handoff: {
+    id: 'custom-handoff',
+    sections: [
+      { key: 'code', label: 'Code Changes', required: true },
+      { key: 'tests', label: 'Test Results', required: true },
+      { key: 'notes', label: 'Developer Notes', required: false },
+    ],
+  },
+})
+```
+
+---
+
+## Feedback edges -- `FeedbackEdge`
+
+Options for `.feedbackEdge(config)` on the `DAGBuilder`. Feedback edges create engine-managed retry loops between two nodes.
+
+| Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `from` | `string` | Yes | -- | Node ID of the reviewing agent. |
+| `to` | `string` | Yes | -- | Node ID of the agent that retries. |
+| `maxRetries` | `number` | Yes | -- | Maximum retry iterations before escalation. Must be at least 1. |
+| `evaluate` | `Evaluator` | Yes | -- | How to determine if the reviewer's output passes. Accepts `rule`, `regex`, or `llm` evaluator types (same as conditional edges). |
+| `passLabel` | `string` | Yes | -- | The label that the evaluator must return for the loop to end successfully. |
+| `escalation` | `EscalationPolicy` | Yes | -- | What to do when retries are exhausted. |
+
+### Escalation policy
+
+| Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `action` | `'fail' \| 'continue'` | Yes | -- | `'fail'` emits an error event and stops the node. `'continue'` proceeds with the last output. |
+| `message` | `string` | No | `undefined` | Human-readable message included in the `feedback_escalation` event. |
+
+### Example
+
+```typescript
+const dag = engine.dag()
+  .agent('dev', { id: 'dev', name: 'Dev', role: 'developer', systemPrompt: '...' })
+  .agent('qa', { id: 'qa', name: 'QA', role: 'reviewer', systemPrompt: '...' })
+  .edge('dev', 'qa')
+  .feedbackEdge({
+    from: 'qa',
+    to: 'dev',
+    maxRetries: 3,
+    evaluate: { type: 'rule', label: 'approved' },
+    passLabel: 'approved',
+    escalation: { action: 'fail', message: 'QA rejected after max retries' },
+  })
+  .build();
+```
+
+---
+
+## Guards -- `GuardConfig`
+
+Anti-pattern guards check agent output for quality issues after each node completes. You can configure guards per-node or engine-wide.
+
+### Per-node guards
+
+Add a `guards` array to any `AgentDescriptor`:
+
+| Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `guards` | `GuardConfig[]` | No | `[]` | Array of guard configurations for this node. |
+
+### Engine-wide guards
+
+Add a `guards` array to `SwarmEngineConfig`:
+
+| Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `guards` | `GuardConfig[]` | No | `[]` | Guards applied to all nodes. Per-node guards are additive (they do not replace engine-wide guards). |
+
+### Guard config
+
+| Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `id` | `string` | Yes | -- | Unique identifier for this guard instance. Used in events. |
+| `type` | `'evidence' \| 'scope-creep'` | Yes | -- | The guard type. `evidence` uses zero-cost pattern matching. `scope-creep` uses a cheap LLM call. |
+| `mode` | `'warn' \| 'block'` | Yes | -- | `warn` emits a `guard_warning` event and continues. `block` emits a `guard_blocked` event and fails the node. |
+
+### Example
+
+```typescript
+// Engine-wide defaults
+const engine = new SwarmEngine({
+  providers: { /* ... */ },
+  guards: [
+    { id: 'evidence', type: 'evidence', mode: 'warn' },
+  ],
+});
+
+// Per-node override (additive)
+const dag = engine.dag()
+  .agent('dev', {
+    id: 'dev',
+    name: 'Developer',
+    role: 'developer',
+    systemPrompt: '...',
+    guards: [
+      { id: 'scope', type: 'scope-creep', mode: 'block' },
+    ],
+  })
+  .build();
+// The 'dev' node runs both the engine-wide 'evidence' guard and its own 'scope-creep' guard.
+```
+
+---
+
 ## Environment variables
 
 The engine does not auto-read environment variables. You pass API keys explicitly through the `providers` config. A common pattern:

@@ -12,6 +12,14 @@ All notable changes to `@swarmengine/core` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Handoff templates** for structured output formatting between DAG nodes. Assign a preset (`standard`, `qa-review`, `qa-feedback`, `escalation`) or define custom inline templates on any edge so downstream agents receive consistently structured context.
+- **Feedback loops** for engine-managed Dev-QA retry cycles. Define a feedback edge with evaluation criteria, retry limits, and escalation policies. The engine automatically re-runs the target node with reviewer feedback injected until the work passes or the retry limit is reached.
+- **Anti-pattern guards** for post-completion output quality checks. Two built-in guard types: `evidence` (zero-cost pattern matching for unsupported claims) and `scope-creep` (cheap LLM check for work beyond task scope). Configure guards per-node or engine-wide in `warn` or `block` mode.
+
 ## [0.1.6] - 2026-02-28
 
 ### Fixed
