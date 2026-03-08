@@ -83,7 +83,9 @@ export type SwarmEvent =
   | { type: 'route_decision'; fromNode: string; toNode: string; reason: string }
   | { type: 'loop_iteration'; nodeId: string; iteration: number; maxIterations: number }
   | { type: 'budget_warning'; used: number; limit: number; percentUsed: number }
-  | { type: 'budget_exceeded'; used: number; limit: number };
+  | { type: 'budget_exceeded'; used: number; limit: number }
+  | { type: 'feedback_retry'; fromNode: string; toNode: string; iteration: number; maxRetries: number }
+  | { type: 'feedback_escalation'; fromNode: string; toNode: string; policy: EscalationPolicy; iteration: number };
 
 export type AgentErrorType =
   | 'timeout'

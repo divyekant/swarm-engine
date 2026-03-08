@@ -1,4 +1,4 @@
-import type { SwarmEvent, NodeResult, CostSummary, ProviderAdapter, PersistenceAdapter, LifecycleHooks } from '../types.js';
+import type { SwarmEvent, NodeResult, CostSummary, ProviderAdapter, PersistenceAdapter, LifecycleHooks, EscalationPolicy } from '../types.js';
 import type { AgentRunner } from '../agent/runner.js';
 import type { AgenticRunner } from '../agent/agentic-runner.js';
 import type { AgenticAdapter } from '../adapters/agentic/types.js';
@@ -53,6 +53,15 @@ export class DAGExecutor {
 
   /** Nodes that are targets of conditional edges and haven't been resolved yet. */
   private readonly conditionallyBlocked: Set<string> = new Set();
+
+  /** Feedback loop iteration counts keyed by "from->to". */
+  private readonly feedbackCounts = new Map<string, number>();
+
+  /** Feedback loop history of QA outputs keyed by "from->to". */
+  private readonly feedbackHistory = new Map<string, string[]>();
+
+  /** Pending feedback context to inject on next run of target node. */
+  private readonly pendingFeedback = new Map<string, import('../types.js').FeedbackContext>();
 
   constructor(
     graph: DAGGraph,
@@ -271,6 +280,12 @@ export class DAGExecutor {
     try {
       let lastDoneEvent: Extract<SwarmEvent, { type: 'agent_done' }> | null = null;
 
+      // Consume pending feedback context for this node (if any)
+      const feedbackContext = this.pendingFeedback.get(nodeId);
+      if (feedbackContext) {
+        this.pendingFeedback.delete(nodeId);
+      }
+
       const agenticCheck = this.isAgenticNode(nodeId);
       const eventSource = agenticCheck.isAgentic && this.agenticRunner
         ? this.agenticRunner.run({
@@ -282,6 +297,7 @@ export class DAGExecutor {
             upstreamOutputs,
             signal: this.signal,
             handoffTemplate,
+            feedbackContext,
           })
         : this.runner.run({
             nodeId,
@@ -291,6 +307,7 @@ export class DAGExecutor {
             upstreamOutputs,
             signal: this.signal,
             handoffTemplate,
+            feedbackContext,
           });
 
       for await (const event of eventSource) {
@@ -363,6 +380,9 @@ export class DAGExecutor {
 
         // Handle cycle edges originating from this node
         yield* this.handleCycleEdges(nodeId, scheduler);
+
+        // Handle feedback edges originating from this node
+        yield* this.handleFeedbackEdges(nodeId, lastDoneEvent.output, scheduler);
 
         // Handle dynamic DAG expansion
         if (node.canEmitDAG) {
@@ -438,6 +458,12 @@ export class DAGExecutor {
       try {
         let lastDoneEvent: Extract<SwarmEvent, { type: 'agent_done' }> | null = null;
 
+        // Consume pending feedback context for this node (if any)
+        const feedbackContext = this.pendingFeedback.get(nodeId);
+        if (feedbackContext) {
+          this.pendingFeedback.delete(nodeId);
+        }
+
         const agenticCheck = this.isAgenticNode(nodeId);
         const eventSource = agenticCheck.isAgentic && this.agenticRunner
           ? this.agenticRunner.run({
@@ -449,6 +475,7 @@ export class DAGExecutor {
               upstreamOutputs,
               signal: this.signal,
               handoffTemplate,
+              feedbackContext,
             })
           : this.runner.run({
               nodeId,
@@ -458,6 +485,7 @@ export class DAGExecutor {
               upstreamOutputs,
               signal: this.signal,
               handoffTemplate,
+              feedbackContext,
             });
 
         for await (const event of eventSource) {
@@ -533,6 +561,11 @@ export class DAGExecutor {
           // Handle cycle edges originating from this node
           for await (const cycleEvent of this.handleCycleEdges(nodeId, scheduler)) {
             events.push(cycleEvent);
+          }
+
+          // Handle feedback edges originating from this node
+          for await (const fbEvent of this.handleFeedbackEdges(nodeId, lastDoneEvent.output, scheduler)) {
+            events.push(fbEvent);
           }
 
           // Handle dynamic DAG expansion
@@ -786,6 +819,93 @@ export class DAGExecutor {
 
       if (iteration < edge.maxCycles) {
         scheduler.resetNodeForCycle(nodeId);
+      }
+    }
+  }
+
+  /**
+   * Handle feedback edges originating from a completed node.
+   *
+   * After a QA-like node completes, its output is evaluated against the feedback
+   * edge's evaluator. If the output passes, the loop ends and downstream continues.
+   * If it fails, the target node (and this QA node) are reset for retry, with
+   * feedback context injected into the target's next run. After maxRetries
+   * exhausted, the escalation policy determines what happens.
+   */
+  private async *handleFeedbackEdges(
+    nodeId: string,
+    output: string,
+    scheduler: Scheduler,
+  ): AsyncGenerator<SwarmEvent> {
+    const feedbackEdges = this.graph.getFeedbackEdges(nodeId);
+    if (feedbackEdges.length === 0) return;
+
+    for (const fe of feedbackEdges) {
+      // Evaluate: did the output pass?
+      const evalProvider = (fe.evaluate.type === 'llm' && fe.evaluate.providerId)
+        ? (this.providers.get(fe.evaluate.providerId) ?? this.provider)
+        : this.provider;
+
+      const result = await evaluate(fe.evaluate, output, evalProvider);
+
+      if (result === fe.passLabel) {
+        // Passed — feedback loop ends, downstream proceeds normally
+        this.logger.info('Feedback loop passed', { from: nodeId, to: fe.to, result });
+        continue;
+      }
+
+      // Failed — check retry count
+      const key = `${fe.from}->${fe.to}`;
+      const count = (this.feedbackCounts.get(key) ?? 0) + 1;
+      this.feedbackCounts.set(key, count);
+
+      // Track feedback history
+      const history = this.feedbackHistory.get(key) ?? [];
+      history.push(output);
+      this.feedbackHistory.set(key, history);
+
+      if (count >= fe.maxRetries) {
+        // Escalate
+        const policy: EscalationPolicy = fe.escalation ?? { action: 'fail' as const };
+        yield {
+          type: 'feedback_escalation',
+          fromNode: fe.from,
+          toNode: fe.to,
+          policy,
+          iteration: count,
+        };
+        this.logger.warn('Feedback loop escalated', { from: fe.from, to: fe.to, iteration: count });
+
+        if (policy.action === 'fail') {
+          scheduler.markFailed(fe.to);
+          this.skipDownstream(fe.to, scheduler);
+        } else if (policy.action === 'skip') {
+          scheduler.markSkipped(fe.to);
+        } else if (policy.action === 'reroute' && policy.reroute) {
+          this.conditionallyBlocked.delete(policy.reroute);
+        }
+      } else {
+        // Retry: reset target node AND this (QA) node so the loop can repeat
+        yield {
+          type: 'feedback_retry',
+          fromNode: fe.from,
+          toNode: fe.to,
+          iteration: count,
+          maxRetries: fe.maxRetries,
+        };
+        this.logger.info('Feedback retry', { from: fe.from, to: fe.to, iteration: count, maxRetries: fe.maxRetries });
+
+        // Reset both the target node (dev) AND the QA node so the loop repeats
+        scheduler.resetNodeForCycle(fe.to);
+        scheduler.resetNodeForCycle(fe.from);
+
+        // Store feedback context for the target node's next run
+        this.pendingFeedback.set(fe.to, {
+          iteration: count,
+          maxRetries: fe.maxRetries,
+          previousFeedback: output,
+          feedbackHistory: [...history],
+        });
       }
     }
   }
