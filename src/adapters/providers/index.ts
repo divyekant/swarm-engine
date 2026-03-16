@@ -29,10 +29,6 @@ export function createProvider(config: ProviderConfig): ProviderAdapter {
     return new OllamaProvider(config.baseUrl ?? 'http://localhost:11434');
   }
 
-  if (config.type === 'google') {
-    throw new Error('Google provider not yet implemented');
-  }
-
   throw new Error(`Unknown provider type: ${(config as ProviderConfig).type}`);
 }
 

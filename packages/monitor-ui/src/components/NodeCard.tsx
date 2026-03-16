@@ -69,6 +69,13 @@ export function NodeCard({ node }: Props) {
         <p className="text-xs text-red-400 mt-1 font-mono">{node.error}</p>
       )}
 
+      {/* Warning summary */}
+      {!node.error && node.warnings && node.warnings.length > 0 && (
+        <p className="text-xs text-amber-300 mt-1 font-mono">
+          Warning{node.warnings.length === 1 ? '' : 's'}: {node.warnings[node.warnings.length - 1]}
+        </p>
+      )}
+
       {/* Output preview */}
       {truncatedOutput && (
         <p className="text-xs text-gray-500 mt-1 leading-relaxed">{truncatedOutput}</p>

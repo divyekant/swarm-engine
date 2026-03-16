@@ -16,6 +16,7 @@ export function initialState(): UIState {
     totalCost: emptyCost(),
     progress: { completed: 0, total: 0 },
     startTime: 0,
+    feedbackEvents: [],
     events: [],
   };
 }
@@ -61,6 +62,7 @@ function reduceEvent(state: UIState, event: SwarmEvent): UIState {
         totalCost: emptyCost(),
         progress: { completed: 0, total: event.nodeCount },
         startTime: Date.now(),
+        feedbackEvents: [],
         events,
       };
 
@@ -142,6 +144,66 @@ function reduceEvent(state: UIState, event: SwarmEvent): UIState {
         ],
         events,
       };
+
+    case 'feedback_retry':
+      return {
+        ...state,
+        feedbackEvents: [
+          ...state.feedbackEvents,
+          {
+            type: 'retry',
+            from: event.fromNode,
+            to: event.toNode,
+            iteration: event.iteration,
+            maxRetries: event.maxRetries,
+            action: 'retry',
+          },
+        ],
+        events,
+      };
+
+    case 'feedback_escalation':
+      return {
+        ...state,
+        feedbackEvents: [
+          ...state.feedbackEvents,
+          {
+            type: 'escalation',
+            from: event.fromNode,
+            to: event.toNode,
+            iteration: event.iteration,
+            action: event.policy.action,
+            detail: event.policy.message ?? event.policy.reroute,
+          },
+        ],
+        events,
+      };
+
+    case 'guard_warning': {
+      const nodes = new Map(state.nodes);
+      const existing = nodes.get(event.nodeId);
+      if (existing) {
+        nodes.set(event.nodeId, {
+          ...existing,
+          warnings: [...(existing.warnings ?? []), event.message],
+        });
+      }
+      return { ...state, nodes, events };
+    }
+
+    case 'guard_blocked': {
+      const nodes = new Map(state.nodes);
+      const existing = nodes.get(event.nodeId);
+      if (existing) {
+        nodes.set(event.nodeId, {
+          ...existing,
+          status: 'failed',
+          error: event.message,
+          warnings: [...(existing.warnings ?? []), event.message],
+        });
+      }
+      return { ...state, nodes, events };
+    }
 
     default:
       return { ...state, events };

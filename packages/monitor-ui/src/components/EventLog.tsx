@@ -1,4 +1,5 @@
 import type { SwarmEvent } from '../lib/types';
+import { summarizeEvent } from '../lib/event-summary';
 
 const TYPE_COLORS: Record<string, string> = {
   swarm_start: 'bg-purple-900 text-purple-300',
@@ -15,6 +16,10 @@ const TYPE_COLORS: Record<string, string> = {
   loop_iteration: 'bg-orange-900 text-orange-300',
   budget_warning: 'bg-yellow-900 text-yellow-300',
   budget_exceeded: 'bg-red-900 text-red-200',
+  feedback_retry: 'bg-cyan-900 text-cyan-300',
+  feedback_escalation: 'bg-fuchsia-900 text-fuchsia-300',
+  guard_warning: 'bg-amber-900 text-amber-200',
+  guard_blocked: 'bg-rose-900 text-rose-200',
 };
 
 interface Props {
@@ -67,39 +72,4 @@ export function EventLog({ events }: Props) {
 function formatTime(ts: number): string {
   const d = new Date(ts);
   return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-function summarizeEvent(event: SwarmEvent): string {
-  switch (event.type) {
-    case 'swarm_start':
-      return `DAG "${event.dagId}" — ${event.nodeCount} nodes`;
-    case 'swarm_progress':
-      return `${event.completed}/${event.total} — running: ${event.runningNodes.join(', ')}`;
-    case 'swarm_done':
-      return `Done — ${event.totalCost.costCents.toFixed(2)}¢ total`;
-    case 'swarm_error':
-      return event.message;
-    case 'swarm_cancelled':
-      return `Cancelled — ${event.completedNodes.length} completed`;
-    case 'agent_start':
-      return `${event.agentName} (${event.agentRole})`;
-    case 'agent_chunk':
-      return event.content.slice(0, 80);
-    case 'agent_tool_use':
-      return `${event.tool}()`;
-    case 'agent_done':
-      return `${event.agentRole} — ${event.cost.costCents.toFixed(2)}¢`;
-    case 'agent_error':
-      return `${event.agentRole}: ${event.message}`;
-    case 'route_decision':
-      return `${event.fromNode} → ${event.toNode}: ${event.reason}`;
-    case 'loop_iteration':
-      return `${event.nodeId} iteration ${event.iteration}/${event.maxIterations}`;
-    case 'budget_warning':
-      return `${event.percentUsed.toFixed(0)}% of budget used`;
-    case 'budget_exceeded':
-      return `Exceeded: ${event.used}¢ / ${event.limit}¢`;
-    default:
-      return JSON.stringify(event);
-  }
 }

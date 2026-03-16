@@ -197,6 +197,46 @@ describe('AgenticRunner', () => {
     expect(ctx).toContain('Found 42 records');
   });
 
+  it('injects handoff instructions and feedback context into upstreamContext', async () => {
+    let capturedParams: Record<string, unknown> = {};
+    const adapter: AgenticAdapter = {
+      async *run(params) {
+        capturedParams = { ...params };
+        yield { type: 'result' as const, output: 'done' };
+      },
+    };
+
+    const costTracker = new CostTracker();
+    const runner = new AgenticRunner(costTracker);
+
+    for await (const _event of runner.run({
+      nodeId: 'handoff-node',
+      agent: baseAgent,
+      task: 'Revise the implementation',
+      adapter,
+      memory: new SwarmMemory(),
+      handoffTemplate: {
+        id: 'qa-review',
+        sections: [{ key: 'deliverables', label: 'Deliverables', required: true }],
+      },
+      feedbackContext: {
+        iteration: 2,
+        maxRetries: 3,
+        previousFeedback: 'Missing tests for retry logic.',
+        feedbackHistory: ['Too vague.', 'Missing tests for retry logic.'],
+      },
+    })) {
+      // consume events
+    }
+
+    const ctx = capturedParams.upstreamContext as string;
+    expect(ctx).toContain('## Output Format');
+    expect(ctx).toContain('## Deliverables (REQUIRED)');
+    expect(ctx).toContain('## Retry Feedback');
+    expect(ctx).toContain('Attempt 2 of 3');
+    expect(ctx).toContain('Missing tests for retry logic.');
+  });
+
   it('builds communication tools that interact with SwarmMemory', async () => {
     let capturedTools: AgenticTool[] = [];
     const adapter: AgenticAdapter = {

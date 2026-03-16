@@ -1,7 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SwarmEngine } from '../src/engine.js';
 import { DAGBuilder } from '../src/dag/builder.js';
-import type { SwarmEngineConfig, SwarmEvent, ProviderAdapter, NodeResult } from '../src/types.js';
+import type {
+  SwarmEngineConfig,
+  SwarmEvent,
+  ProviderAdapter,
+  NodeResult,
+  PersistenceAdapter,
+  CreateRunParams,
+  ArtifactRequest,
+  Message,
+  ActivityParams,
+} from '../src/types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -469,6 +479,122 @@ describe('SwarmEngine', () => {
       // Should execute successfully
       const swarmDones = eventsOfType(events, 'swarm_done');
       expect(swarmDones).toHaveLength(1);
+    });
+
+    it('propagates thread history and entity context from RunOptions into standard agent execution', async () => {
+      let capturedMessages: Message[] = [];
+
+      const persistence: PersistenceAdapter = {
+        createRun: vi.fn(async (_params: CreateRunParams) => 'run-1'),
+        updateRun: vi.fn(async () => {}),
+        createArtifact: vi.fn(async (_params: ArtifactRequest) => 'artifact-1'),
+        saveMessage: vi.fn(async (_threadId: string, _role: string, _content: string) => {}),
+        loadThreadHistory: vi.fn(async (_threadId: string) => [
+          { role: 'user', content: 'Previous conversation turn' },
+        ]),
+        logActivity: vi.fn(async (_params: ActivityParams) => {}),
+      };
+
+      const context = {
+        getContext: vi.fn(async (entityType: string, entityId: string) =>
+          `Entity(${entityType}:${entityId})`),
+      };
+
+      const codebase = {
+        query: vi.fn(async (repoId: string, query: string, tier: 'mini' | 'standard' | 'full') =>
+          `Codebase(${repoId}:${tier}:${query})`),
+      };
+
+      const config: SwarmEngineConfig = {
+        providers: {
+          test: {
+            type: 'custom',
+            adapter: {
+              async *stream(params) {
+                capturedMessages = params.messages;
+                yield { type: 'chunk' as const, content: 'done' };
+                yield { type: 'usage' as const, inputTokens: 10, outputTokens: 4 };
+              },
+              estimateCost: () => 1,
+              getModelLimits: () => ({ contextWindow: 128_000, maxOutput: 4096 }),
+            },
+          },
+        },
+        defaults: { provider: 'test' },
+        persistence,
+        context,
+        codebase,
+      };
+
+      const engine = new SwarmEngine(config);
+      const dag = engine
+        .dag()
+        .agent('a', { id: 'a', name: 'A', role: 'analyst', systemPrompt: 'Analyze.' })
+        .build();
+
+      await collectEvents(engine.run({
+        dag,
+        task: 'Analyze feature gap',
+        threadId: 'thread-1',
+        entityType: 'feature',
+        entityId: 'feat-7',
+      }));
+
+      expect(persistence.loadThreadHistory).toHaveBeenCalledWith('thread-1');
+      expect(context.getContext).toHaveBeenCalledWith('feature', 'feat-7');
+      expect(codebase.query).toHaveBeenCalledWith('feat-7', 'Analyze feature gap', 'mini');
+      expect(capturedMessages).toEqual(expect.arrayContaining([
+        expect.objectContaining({ role: 'user', content: 'Previous conversation turn' }),
+        expect.objectContaining({ role: 'user', content: 'Analyze feature gap' }),
+      ]));
+
+      const systemMessage = capturedMessages.find((message) => message.role === 'system');
+      expect(systemMessage?.content).toContain('Entity(feature:feat-7)');
+      expect(systemMessage?.content).toContain('Codebase(feat-7:mini:Analyze feature gap)');
+    });
+
+    it('does not mutate the caller-owned DAG when applying engine defaults', async () => {
+      const engine = new SwarmEngine({
+        providers: {
+          test: {
+            type: 'custom',
+            adapter: {
+              async *stream() {
+                yield { type: 'chunk' as const, content: 'ok' };
+                yield { type: 'usage' as const, inputTokens: 5, outputTokens: 2 };
+              },
+              estimateCost: () => 1,
+              getModelLimits: () => ({ contextWindow: 128_000, maxOutput: 4096 }),
+            },
+          },
+        },
+        defaults: {
+          provider: 'test',
+          model: 'test-model',
+          temperature: 0.25,
+          maxTokens: 512,
+        },
+      });
+
+      const dag = engine
+        .dag()
+        .agent('writer', {
+          id: 'writer',
+          name: 'Writer',
+          role: 'writer',
+          systemPrompt: 'Write.',
+        })
+        .build();
+
+      const originalNode = structuredClone(dag.nodes[0]);
+
+      await collectEvents(engine.run({ dag, task: 'Write once' }));
+
+      expect(dag.nodes[0]).toEqual(originalNode);
+      expect(dag.nodes[0].agent.providerId).toBeUndefined();
+      expect(dag.nodes[0].agent.model).toBeUndefined();
+      expect(dag.nodes[0].agent.temperature).toBeUndefined();
+      expect(dag.nodes[0].agent.maxTokens).toBeUndefined();
     });
   });
 });

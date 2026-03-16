@@ -416,10 +416,30 @@ const engine = new SwarmEngine({
 git clone https://github.com/divyekant/swarm-engine.git
 cd swarm-engine
 npm install
+npm --prefix packages/monitor-ui install
 npm run build
 npm test
+npm run test:monitor
+npm run monitor:build
 npm run typecheck
 ```
+
+## Monitor UI
+
+The repo includes a local monitor app in `packages/monitor-ui` for visualizing swarm execution over the built-in SSE monitor server.
+
+```bash
+# Terminal 1: start your swarm with the monitor server enabled
+# use `startMonitor()` / `createMonitorServer()` from @swarmengine/core
+
+# Terminal 2: run a local mock event source if you want to exercise the UI
+npm run monitor:mock
+
+# Terminal 3: start the Vite monitor app
+npm run monitor:dev
+```
+
+The monitor defaults to `http://localhost:4820` and now tracks the full current event surface, including feedback-loop and guard events.
 
 ## License
 

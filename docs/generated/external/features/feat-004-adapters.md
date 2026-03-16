@@ -126,7 +126,7 @@ interface ContextProvider {
 }
 ```
 
-The engine calls this before each agent runs, passing the `entityType` and `entityId` from `RunOptions`. The returned string is prepended to the agent's system prompt.
+The engine calls this before each standard agent runs, passing the `entityType` and `entityId` from `RunOptions`. The returned string is included in the assembled system context.
 
 **Built-in default:** `NoopContextProvider` -- returns an empty string.
 

@@ -1,7 +1,7 @@
 ---
 type: changelog
 audience: external
-generated: 2026-02-28
+generated: 2026-03-15
 hermes-version: 1.0.0
 ---
 
@@ -16,9 +16,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Handoff templates** for structured output formatting between DAG nodes. Assign a preset (`standard`, `qa-review`, `qa-feedback`, `escalation`) or define custom inline templates on any edge so downstream agents receive consistently structured context.
-- **Feedback loops** for engine-managed Dev-QA retry cycles. Define a feedback edge with evaluation criteria, retry limits, and escalation policies. The engine automatically re-runs the target node with reviewer feedback injected until the work passes or the retry limit is reached.
-- **Anti-pattern guards** for post-completion output quality checks. Two built-in guard types: `evidence` (zero-cost pattern matching for unsupported claims) and `scope-creep` (cheap LLM check for work beyond task scope). Configure guards per-node or engine-wide in `warn` or `block` mode.
+
+## [0.3.0] - 2026-03-15
+
+### Added
+
+- Real-time parallel event streaming for executor consumers, allowing fast branches to emit events before slower siblings finish.
+- First-class monitor workflows from the repo root, including dedicated monitor tests, build commands, and CI coverage.
+- Monitor support for feedback-loop and guard events, with reducer and event-summary unit tests.
+
+### Changed
+
+- `RunOptions` thread, entity, and metadata fields now propagate through execution, context assembly, and persistence for standard runs.
+- Engine defaults now apply to an effective per-run DAG instead of mutating caller-owned DAG definitions.
+- Agentic runs now receive handoff instructions and retry feedback through the existing prompt/context channel.
+
+### Removed
+
+- The unimplemented built-in `google` provider type from `ProviderConfig`; use a custom provider for Google integrations until a real adapter exists.
+
+### Fixed
+
+- External docs now match actual runtime provider and context behavior.
 
 ## [0.1.6] - 2026-02-28
 

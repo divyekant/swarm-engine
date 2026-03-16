@@ -157,7 +157,7 @@ Agent execution does not have its own dedicated configuration section. It is con
 - **Agent descriptors** -- Model, temperature, maxTokens, providerId, and agentic options are per-agent.
 - **Engine defaults** (`SwarmEngineConfig.defaults`) -- Fallback values for model, temperature, maxTokens, and provider when not specified per-agent.
 - **Engine limits** (`SwarmEngineConfig.limits`) -- `maxPerAgentBudgetCents` controls per-agent cost budgets. `maxSwarmBudgetCents` controls the overall swarm budget.
-- **Provider configuration** (`SwarmEngineConfig.providers`) -- Each entry's `type` field determines whether it is a standard provider or an agentic provider. Standard types: `anthropic`, `anthropic-oauth`, `openai`, `google`, `ollama`, `custom`. Agentic types: `claude-code`, `codex`, `custom-agentic`.
+- **Provider configuration** (`SwarmEngineConfig.providers`) -- Each entry's `type` field determines whether it is a standard provider or an agentic provider. Standard types: `anthropic`, `anthropic-oauth`, `openai`, `ollama`, `custom`. Agentic types: `claude-code`, `codex`, `custom-agentic`.
 
 ## Edge Cases & Limitations
 

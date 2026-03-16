@@ -51,10 +51,6 @@ describe('createProvider', () => {
     expect(provider.estimateCost).toBeTypeOf('function');
   });
 
-  it('throws for google provider (not yet implemented)', () => {
-    expect(() => createProvider({ type: 'google' })).toThrow('Google provider not yet implemented');
-  });
-
   it('custom provider streams correctly', async () => {
     const events: ProviderEvent[] = [];
     const mockAdapter: ProviderAdapter = {

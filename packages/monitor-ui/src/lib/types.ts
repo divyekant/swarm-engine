@@ -19,12 +19,28 @@ export interface NodeResult {
   durationMs: number;
 }
 
-// SwarmEvent union — mirrors core's SwarmEvent exactly
+export interface ArtifactRequest {
+  type: string;
+  title: string;
+  content: string;
+  entityType?: string;
+  entityId?: string;
+  parentArtifactId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface EscalationPolicy {
+  action: 'skip' | 'fail' | 'reroute';
+  reroute?: string;
+  message?: string;
+}
+
+// SwarmEvent union — mirrors core's SwarmEvent surface
 export type SwarmEvent =
   | { type: 'agent_start'; nodeId: string; agentRole: string; agentName: string }
   | { type: 'agent_chunk'; nodeId: string; agentRole: string; content: string }
   | { type: 'agent_tool_use'; nodeId: string; tool: string; input: Record<string, unknown> }
-  | { type: 'agent_done'; nodeId: string; agentRole: string; output: string; cost: CostSummary }
+  | { type: 'agent_done'; nodeId: string; agentRole: string; output: string; artifactRequest?: ArtifactRequest; cost: CostSummary }
   | { type: 'agent_error'; nodeId: string; agentRole: string; message: string; errorType: string }
   | { type: 'swarm_start'; dagId: string; nodeCount: number; estimatedCost?: number }
   | { type: 'swarm_progress'; completed: number; total: number; runningNodes: string[] }
@@ -34,7 +50,11 @@ export type SwarmEvent =
   | { type: 'route_decision'; fromNode: string; toNode: string; reason: string }
   | { type: 'loop_iteration'; nodeId: string; iteration: number; maxIterations: number }
   | { type: 'budget_warning'; used: number; limit: number; percentUsed: number }
-  | { type: 'budget_exceeded'; used: number; limit: number };
+  | { type: 'budget_exceeded'; used: number; limit: number }
+  | { type: 'feedback_retry'; fromNode: string; toNode: string; iteration: number; maxRetries: number }
+  | { type: 'feedback_escalation'; fromNode: string; toNode: string; policy: EscalationPolicy; iteration: number }
+  | { type: 'guard_warning'; nodeId: string; guardId: string; guardType: string; message: string }
+  | { type: 'guard_blocked'; nodeId: string; guardId: string; guardType: string; message: string };
 
 // UI state — client-side mirror of MonitorState
 export interface NodeUIState {
@@ -45,6 +65,17 @@ export interface NodeUIState {
   output?: string;
   error?: string;
   cost?: CostSummary;
+  warnings?: string[];
+}
+
+export interface FeedbackEventSummary {
+  type: 'retry' | 'escalation';
+  from: string;
+  to: string;
+  iteration: number;
+  maxRetries?: number;
+  action: string;
+  detail?: string;
 }
 
 export interface UIState {
@@ -56,5 +87,6 @@ export interface UIState {
   totalCost: CostSummary;
   progress: { completed: number; total: number };
   startTime: number;
+  feedbackEvents: FeedbackEventSummary[];
   events: Array<{ timestamp: number; event: SwarmEvent }>;
 }

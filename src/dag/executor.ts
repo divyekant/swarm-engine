@@ -16,6 +16,14 @@ export interface ExecutorLimits {
   maxSwarmDurationMs?: number;
 }
 
+export interface ExecutorRunContext {
+  threadId?: string;
+  threadHistory?: import('../types.js').Message[];
+  entityType?: string;
+  entityId?: string;
+  metadata?: Record<string, unknown>;
+}
+
 /**
  * DAGExecutor orchestrates the execution of a full DAG.
  *
@@ -49,6 +57,7 @@ export class DAGExecutor {
   private readonly dagId: string;
   private readonly logger: Logger;
   private readonly defaultGuards: Guard[];
+  private readonly runContext: ExecutorRunContext;
 
   /** Maps nodeId -> runId for persistence tracking. */
   private readonly runIds = new Map<string, string>();
@@ -81,6 +90,7 @@ export class DAGExecutor {
     lifecycle?: LifecycleHooks,
     logger?: Logger,
     defaultGuards?: Guard[],
+    runContext?: ExecutorRunContext,
   ) {
     this.graph = graph;
     this.runner = runner;
@@ -98,6 +108,7 @@ export class DAGExecutor {
     this.dagId = graph.id;
     this.logger = logger ?? new Logger();
     this.defaultGuards = defaultGuards ?? [];
+    this.runContext = runContext ?? {};
     this.startTime = Date.now();
 
     // Pre-compute the set of nodes that are targets of conditional edges.
@@ -312,6 +323,9 @@ export class DAGExecutor {
             signal: this.signal,
             handoffTemplate,
             feedbackContext,
+            threadHistory: this.runContext.threadHistory,
+            entityType: this.runContext.entityType,
+            entityId: this.runContext.entityId,
           });
 
       for await (const event of eventSource) {
@@ -478,17 +492,40 @@ export class DAGExecutor {
     outputs: Map<string, { agentRole: string; output: string }>,
     completedNodeIds: string[],
   ): AsyncGenerator<SwarmEvent> {
-    // Collect all events from each parallel node execution
-    const nodeEventSets: Map<string, SwarmEvent[]> = new Map();
-
     this.logger.info('Parallel batch launched', { nodeIds, count: nodeIds.length });
 
+    const queuedEvents: SwarmEvent[] = [];
+    let activeTasks = nodeIds.length;
+    let notifyNextEvent: (() => void) | null = null;
+
+    const pushEvent = (event: SwarmEvent): void => {
+      queuedEvents.push(event);
+      if (notifyNextEvent) {
+        const resolve = notifyNextEvent;
+        notifyNextEvent = null;
+        resolve();
+      }
+    };
+
+    const waitForNextEvent = async (): Promise<void> => {
+      if (queuedEvents.length > 0 || activeTasks === 0) return;
+
+      await new Promise<void>((resolve) => {
+        notifyNextEvent = resolve;
+      });
+    };
+
     const promises = nodeIds.map(async (nodeId) => {
-      const events: SwarmEvent[] = [];
       const node = this.graph.getNode(nodeId);
       if (!node) {
         scheduler.markFailed(nodeId);
-        return { nodeId, events };
+        activeTasks--;
+        if (notifyNextEvent) {
+          const resolve = notifyNextEvent;
+          notifyNextEvent = null;
+          resolve();
+        }
+        return;
       }
 
       const upstreamOutputs = this.getUpstreamOutputs(nodeId, outputs);
@@ -523,19 +560,22 @@ export class DAGExecutor {
               handoffTemplate,
               feedbackContext,
             })
-          : this.runner.run({
-              nodeId,
-              agent: node.agent,
-              task: node.task ?? this.task,
-              memory: this.memory,
-              upstreamOutputs,
-              signal: this.signal,
-              handoffTemplate,
-              feedbackContext,
+        : this.runner.run({
+            nodeId,
+            agent: node.agent,
+            task: node.task ?? this.task,
+            memory: this.memory,
+            upstreamOutputs,
+            signal: this.signal,
+            handoffTemplate,
+            feedbackContext,
+            threadHistory: this.runContext.threadHistory,
+            entityType: this.runContext.entityType,
+            entityId: this.runContext.entityId,
             });
 
         for await (const event of eventSource) {
-          events.push(event);
+          pushEvent(event);
 
           if (event.type === 'agent_done') {
             lastDoneEvent = event;
@@ -552,7 +592,7 @@ export class DAGExecutor {
               durationMs: Date.now() - startTime,
             });
             await this.callLifecycleOnRunFailed(runId, node.agent.id, event.message, event.errorType);
-            return { nodeId, events };
+            return;
           }
         }
 
@@ -571,7 +611,7 @@ export class DAGExecutor {
             for (const gr of guardResults) {
               if (gr.triggered) {
                 if (gr.blocked) {
-                  events.push({
+                  pushEvent({
                     type: 'guard_blocked' as const,
                     nodeId,
                     guardId: gr.guardId,
@@ -580,7 +620,7 @@ export class DAGExecutor {
                   });
                   blocked = true;
                 } else {
-                  events.push({
+                  pushEvent({
                     type: 'guard_warning' as const,
                     nodeId,
                     guardId: gr.guardId,
@@ -594,7 +634,7 @@ export class DAGExecutor {
             if (blocked) {
               scheduler.markFailed(nodeId);
               this.skipDownstream(nodeId, scheduler);
-              return { nodeId, events };
+              return;
             }
           }
 
@@ -629,7 +669,7 @@ export class DAGExecutor {
           // Check per-agent budget
           const agentBudget = this.costTracker.checkAgentBudget(node.agent.id);
           if (!agentBudget.ok) {
-            events.push({
+            pushEvent({
               type: 'budget_exceeded',
               used: agentBudget.used,
               limit: this.costTracker.perAgentBudget!,
@@ -642,23 +682,23 @@ export class DAGExecutor {
             lastDoneEvent.output,
             scheduler,
           )) {
-            events.push(routeEvent);
+            pushEvent(routeEvent);
           }
 
           // Handle cycle edges originating from this node
           for await (const cycleEvent of this.handleCycleEdges(nodeId, scheduler)) {
-            events.push(cycleEvent);
+            pushEvent(cycleEvent);
           }
 
           // Handle feedback edges originating from this node
           for await (const fbEvent of this.handleFeedbackEdges(nodeId, lastDoneEvent.output, scheduler)) {
-            events.push(fbEvent);
+            pushEvent(fbEvent);
           }
 
           // Handle dynamic DAG expansion
           if (node.canEmitDAG) {
             for await (const dynEvent of this.handleDynamicExpansion(nodeId, lastDoneEvent.output, scheduler)) {
-              events.push(dynEvent);
+              pushEvent(dynEvent);
             }
           }
         } else {
@@ -670,7 +710,7 @@ export class DAGExecutor {
         this.skipDownstream(nodeId, scheduler);
 
         const message = err instanceof Error ? err.message : String(err);
-        events.push({
+        pushEvent({
           type: 'agent_error',
           nodeId,
           agentRole: node.agent.role,
@@ -685,19 +725,30 @@ export class DAGExecutor {
           durationMs: Date.now() - startTime,
         });
         await this.callLifecycleOnRunFailed(runId, node.agent.id, message, 'unknown');
+      } finally {
+        activeTasks--;
+        if (notifyNextEvent) {
+          const resolve = notifyNextEvent;
+          notifyNextEvent = null;
+          resolve();
+        }
       }
-
-      return { nodeId, events };
     });
 
-    const settled = await Promise.all(promises);
+    while (activeTasks > 0 || queuedEvents.length > 0) {
+      if (queuedEvents.length === 0) {
+        await waitForNextEvent();
+      }
 
-    // Yield all collected events from each node in order
-    for (const { events } of settled) {
-      for (const event of events) {
-        yield event;
+      while (queuedEvents.length > 0) {
+        const event = queuedEvents.shift();
+        if (event) {
+          yield event;
+        }
       }
     }
+
+    await Promise.all(promises);
 
     // Emit a single progress event after the entire parallel batch
     yield this.progressEvent(scheduler, completedNodeIds);
@@ -1116,6 +1167,10 @@ export class DAGExecutor {
         swarmId: this.dagId,
         nodeId,
         task: node.task ?? this.task,
+        threadId: this.runContext.threadId,
+        entityType: this.runContext.entityType,
+        entityId: this.runContext.entityId,
+        metadata: this.runContext.metadata,
       });
       this.runIds.set(nodeId, runId);
       // Call onRunStart lifecycle hook

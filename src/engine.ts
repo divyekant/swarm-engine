@@ -3,6 +3,8 @@ import type {
   RunOptions,
   SwarmEvent,
   ProviderAdapter,
+  DAGDefinition,
+  Message,
 } from './types.js';
 import type { AgenticAdapter } from './adapters/agentic/types.js';
 import { DAGBuilder } from './dag/builder.js';
@@ -97,11 +99,13 @@ export class SwarmEngine {
    * Validates and executes a DAG, yielding SwarmEvents throughout the process.
    */
   async *run(options: RunOptions): AsyncGenerator<SwarmEvent> {
+    const effectiveDag = this.applyDefaults(options.dag);
+
     // 1. Validate the DAG — merge both maps so agentic provider references pass validation
     const allProviderKeys: Record<string, unknown> = {};
     for (const [k, v] of this.providers) allProviderKeys[k] = v;
     for (const [k, v] of this.agenticAdapters) allProviderKeys[k] = v;
-    const validation = validateDAG(options.dag, { providers: allProviderKeys });
+    const validation = validateDAG(effectiveDag, { providers: allProviderKeys });
     if (!validation.valid) {
       yield {
         type: 'swarm_error',
@@ -112,26 +116,7 @@ export class SwarmEngine {
       return;
     }
 
-    this.logger.info('DAG validated', { dagId: options.dag.id, nodes: options.dag.nodes.length, edges: options.dag.edges.length });
-
-    // 1b. Apply engine defaults to agent descriptors
-    const defaults = this.config.defaults;
-    if (defaults) {
-      for (const node of options.dag.nodes) {
-        if (!node.agent.model && defaults.model) {
-          node.agent.model = defaults.model;
-        }
-        if (node.agent.temperature === undefined && defaults.temperature !== undefined) {
-          node.agent.temperature = defaults.temperature;
-        }
-        if (node.agent.maxTokens === undefined && defaults.maxTokens !== undefined) {
-          node.agent.maxTokens = defaults.maxTokens;
-        }
-        if (!node.agent.providerId && defaults.provider) {
-          node.agent.providerId = defaults.provider;
-        }
-      }
-    }
+    this.logger.info('DAG validated', { dagId: effectiveDag.id, nodes: effectiveDag.nodes.length, edges: effectiveDag.edges.length });
 
     // 2. Create cost tracker with budget from config
     const costTracker = new CostTracker(
@@ -179,7 +164,8 @@ export class SwarmEngine {
       : undefined;
 
     // 7. Create DAG graph
-    const graph = new DAGGraph(options.dag);
+    const graph = new DAGGraph(effectiveDag);
+    const threadHistory = await this.loadThreadHistory(options.threadId);
 
     // 8. Create DAG executor
     const executor = new DAGExecutor(
@@ -201,6 +187,13 @@ export class SwarmEngine {
       this.config.lifecycle,
       this.logger,
       this.config.guards,
+      {
+        threadId: options.threadId,
+        threadHistory,
+        entityType: options.entityType,
+        entityId: options.entityId,
+        metadata: options.metadata,
+      },
     );
 
     // 9. Yield all events from executor
@@ -216,7 +209,37 @@ export class SwarmEngine {
 
     // 10. Call lifecycle hooks if configured
     if (results && this.config.lifecycle?.onSwarmComplete) {
-      await this.config.lifecycle.onSwarmComplete(options.dag.id, results);
+      await this.config.lifecycle.onSwarmComplete(effectiveDag.id, results);
+    }
+  }
+
+  private applyDefaults(dag: DAGDefinition): DAGDefinition {
+    const defaults = this.config.defaults;
+    if (!defaults) return dag;
+
+    return {
+      ...dag,
+      nodes: dag.nodes.map((node) => ({
+        ...node,
+        agent: {
+          ...node.agent,
+          model: node.agent.model ?? defaults.model,
+          temperature: node.agent.temperature ?? defaults.temperature,
+          maxTokens: node.agent.maxTokens ?? defaults.maxTokens,
+          providerId: node.agent.providerId ?? defaults.provider,
+        },
+      })),
+    };
+  }
+
+  private async loadThreadHistory(threadId?: string): Promise<Message[] | undefined> {
+    if (!threadId) return undefined;
+
+    try {
+      return await this.persistence.loadThreadHistory(threadId);
+    } catch {
+      this.logger.warn('Persistence error swallowed', { operation: 'loadThreadHistory', threadId });
+      return undefined;
     }
   }
 }

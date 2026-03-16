@@ -19,6 +19,9 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
+      - run: npm --prefix packages/monitor-ui ci
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      - run: npm run test:monitor
+      - run: npm run monitor:build

@@ -42,7 +42,7 @@ LifecycleHooks provides four optional callbacks: onRunStart, onRunComplete, onRu
 
 ### Provider Type Enum
 
-The ProviderConfig type field accepts: 'anthropic', 'anthropic-oauth', 'openai', 'google', 'ollama', 'custom', 'claude-code', 'codex', or 'custom-agentic'. The google type is declared but throws "not yet implemented" if used. The DAGExecutor splits these into two groups: standard providers (anthropic, anthropic-oauth, openai, google, ollama, custom) go through ProviderAdapter and AgentRunner; agentic providers (claude-code, codex, custom-agentic) go through AgenticAdapter and AgenticRunner.
+The ProviderConfig type field accepts: 'anthropic', 'anthropic-oauth', 'openai', 'ollama', 'custom', 'claude-code', 'codex', or 'custom-agentic'. The DAGExecutor splits these into two groups: standard providers (anthropic, anthropic-oauth, openai, ollama, custom) go through ProviderAdapter and AgentRunner; agentic providers (claude-code, codex, custom-agentic) go through AgenticAdapter and AgenticRunner.
 
 ### Lazy Initialization
 
@@ -78,7 +78,6 @@ For AnthropicOAuthProvider, the constructor takes an OAuth token string and an o
 
 ## Edge Cases & Limitations
 
-- **Google provider declared but not implemented.** Configuring type 'google' throws an error at provider creation time.
 - **Custom provider without adapter.** Configuring type 'custom' without passing an adapter property on ProviderConfig throws immediately.
 - **Custom-agentic without agenticAdapter.** Same pattern -- the factory throws with a descriptive error.
 - **Missing SDK for agentic providers.** The error surfaces on first run() call, not at construction. The error message is the standard Node.js "Cannot find module" error from the dynamic import.
@@ -117,7 +116,6 @@ No. Adapters are set at engine construction time. To use different adapters, con
 - **"Custom agentic provider requires agenticAdapter"**: Same pattern for type 'custom-agentic'. Provide an object implementing AgenticAdapter.
 - **"Anthropic provider requires apiKey"**: The ProviderConfig has type 'anthropic' but no apiKey. Set the apiKey field.
 - **"is not an allowed Anthropic host"**: AnthropicOAuthProvider rejects non-Anthropic base URLs. Only *.anthropic.com hosts are permitted for OAuth tokens.
-- **"Google provider not yet implemented"**: The google provider type is reserved but has no implementation. Use a custom provider to integrate Google models.
 - **Agent runs but context/memory/persona is empty**: Check whether you provided implementations for the corresponding adapter slots. The defaults are noops that return empty values.
 - **"Cannot find module '@anthropic-ai/claude-agent-sdk'"**: Install the optional SDK package. It is not included automatically.
 - **PersonaSmithProvider returns null for a known role**: Verify the persona file exists at the expected path. Check that the role string maps to the correct kebab-case filename. For department-qualified paths, the format is "department/role-name".

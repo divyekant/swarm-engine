@@ -53,15 +53,15 @@ Each entry in the `providers` map configures one LLM backend.
 
 | Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `type` | `'anthropic'` \| `'anthropic-oauth'` \| `'openai'` \| `'google'` \| `'ollama'` \| `'custom'` \| `'claude-code'` \| `'codex'` \| `'custom-agentic'` | Yes | -- | Which provider SDK or adapter to use. |
-| `apiKey` | `string` | No | -- | API key for the provider. Required for `anthropic`, `anthropic-oauth`, `openai`, and `google`. |
+| `type` | `'anthropic'` \| `'anthropic-oauth'` \| `'openai'` \| `'ollama'` \| `'custom'` \| `'claude-code'` \| `'codex'` \| `'custom-agentic'` | Yes | -- | Which provider SDK or adapter to use. |
+| `apiKey` | `string` | No | -- | API key for the provider. Required for `anthropic`, `anthropic-oauth`, and `openai`. |
 | `baseUrl` | `string` | No | Provider default | Custom base URL. Useful for `ollama` (e.g., `http://localhost:11434`) or proxy setups with `custom`. |
 | `adapter` | `ProviderAdapter` | No | -- | Your own streaming adapter. Required when `type` is `'custom'`. |
 | `agenticAdapter` | `AgenticAdapter` | No | -- | Your own agentic adapter. Required when `type` is `'custom-agentic'`. |
 
 ### Standard providers
 
-Standard providers (`anthropic`, `anthropic-oauth`, `openai`, `google`, `ollama`, `custom`) stream LLM completions. The engine manages message history, tool calls, and token counting.
+Standard providers (`anthropic`, `anthropic-oauth`, `openai`, `ollama`, `custom`) stream LLM completions. The engine manages message history, tool calls, and token counting.
 
 ```typescript
 providers: {

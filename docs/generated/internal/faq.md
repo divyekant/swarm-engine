@@ -157,7 +157,7 @@ See: `src/monitor/sse-bridge.ts`
 
 **Q: What LLM providers are supported out of the box?**
 
-Standard providers: `anthropic` (API key auth), `anthropic-oauth` (OAuth token auth), `openai`, `ollama`, and `custom` (bring your own `ProviderAdapter`). Agentic providers: `claude-code`, `codex`, and `custom-agentic` (bring your own `AgenticAdapter`). Google is declared in the type system but throws "not yet implemented" at runtime.
+Standard providers: `anthropic` (API key auth), `anthropic-oauth` (OAuth token auth), `openai`, `ollama`, and `custom` (bring your own `ProviderAdapter`). Agentic providers: `claude-code`, `codex`, and `custom-agentic` (bring your own `AgenticAdapter`).
 
 See: `src/adapters/providers/index.ts`, `src/adapters/agentic/index.ts`
 

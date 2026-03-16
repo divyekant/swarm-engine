@@ -319,7 +319,14 @@ describe('SwarmEngine persistence pass-through', () => {
       .agent('a', { id: 'a', name: 'A', role: 'writer', systemPrompt: 'Write.' })
       .build();
 
-    await collectEvents(engine.run({ dag, task: 'test persistence' }));
+    await collectEvents(engine.run({
+      dag,
+      task: 'test persistence',
+      threadId: 'thread-42',
+      entityType: 'feature',
+      entityId: 'feat-42',
+      metadata: { source: 'integration-test' },
+    }));
 
     // Persistence adapter should have been called
     expect(adapter.createRun).toHaveBeenCalledTimes(1);
@@ -329,6 +336,10 @@ describe('SwarmEngine persistence pass-through', () => {
     expect(createParams.agentId).toBe('a');
     expect(createParams.agentRole).toBe('writer');
     expect(createParams.swarmId).toBe(dag.id);
+    expect(createParams.threadId).toBe('thread-42');
+    expect(createParams.entityType).toBe('feature');
+    expect(createParams.entityId).toBe('feat-42');
+    expect(createParams.metadata).toEqual({ source: 'integration-test' });
   });
 
   it('calls lifecycle hooks onRunStart and onRunComplete', async () => {

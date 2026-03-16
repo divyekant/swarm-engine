@@ -1,6 +1,6 @@
 {
   "name": "@swarmengine/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Multi-agent DAG orchestration engine with actor-style agents, cost tracking, and pluggable adapters",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -13,8 +13,12 @@
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
+    "test:monitor": "vitest run --config packages/monitor-ui/vitest.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "monitor:build": "npm --prefix packages/monitor-ui run build",
+    "monitor:dev": "npm --prefix packages/monitor-ui run dev",
+    "monitor:mock": "npm --prefix packages/monitor-ui run mock",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

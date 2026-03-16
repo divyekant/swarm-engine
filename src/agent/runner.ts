@@ -21,6 +21,9 @@ export interface AgentRunParams {
   signal?: AbortSignal;
   handoffTemplate?: import('../types.js').HandoffTemplate;
   feedbackContext?: import('../types.js').FeedbackContext;
+  threadHistory?: Message[];
+  entityType?: string;
+  entityId?: string;
 }
 
 /**
@@ -50,7 +53,19 @@ export class AgentRunner {
   }
 
   async *run(params: AgentRunParams): AsyncGenerator<SwarmEvent> {
-    const { nodeId, agent, task, memory, upstreamOutputs, signal, handoffTemplate, feedbackContext } = params;
+    const {
+      nodeId,
+      agent,
+      task,
+      memory,
+      upstreamOutputs,
+      signal,
+      handoffTemplate,
+      feedbackContext,
+      threadHistory,
+      entityType,
+      entityId,
+    } = params;
     const startTime = Date.now();
 
     // Resolve provider: use agent's providerId if available, else default
@@ -79,8 +94,12 @@ export class AgentRunner {
         upstreamOutputs,
         swarmMemory: memory,
         agentId: agent.id,
+        agentRole: agent.role,
         handoffTemplate,
         feedbackContext,
+        threadHistory,
+        entityType,
+        entityId,
       });
 
       // 3. Get agent communication tools

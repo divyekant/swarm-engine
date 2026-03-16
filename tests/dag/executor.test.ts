@@ -232,6 +232,70 @@ describe('DAGExecutor', () => {
   });
 
   describe('parallel fan-out/fan-in', () => {
+    it('emits fast parallel branch events before slow siblings finish', async () => {
+      const dag = new DAGBuilder()
+        .agent('a', agent('a'))
+        .agent('b', agent('b'))
+        .agent('c', agent('c'))
+        .edge('a', 'b')
+        .edge('a', 'c')
+        .build();
+      const graph = new DAGGraph(dag);
+
+      const runner = {
+        async *run(params: AgentRunParams): AsyncGenerator<SwarmEvent> {
+          const { nodeId, agent: agentDesc } = params;
+
+          yield {
+            type: 'agent_start',
+            nodeId,
+            agentRole: agentDesc.role,
+            agentName: agentDesc.name,
+          };
+
+          if (nodeId === 'b') {
+            await new Promise((resolve) => setTimeout(resolve, 80));
+          }
+
+          if (nodeId === 'c') {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+          }
+
+          yield {
+            type: 'agent_chunk',
+            nodeId,
+            agentRole: agentDesc.role,
+            content: `chunk-${nodeId}`,
+          };
+
+          yield {
+            type: 'agent_done',
+            nodeId,
+            agentRole: agentDesc.role,
+            output: `output-${nodeId}`,
+            cost: emptyCost(),
+          };
+        },
+      } as AgentRunner;
+
+      const costTracker = new CostTracker();
+      const memory = new SwarmMemory();
+      const executor = new DAGExecutor(graph, runner, costTracker, memory, 'parallel timing');
+
+      const startedAt = Date.now();
+      let fastChunkAt: number | null = null;
+
+      for await (const event of executor.execute()) {
+        if (event.type === 'agent_chunk' && event.nodeId === 'c') {
+          fastChunkAt = Date.now() - startedAt;
+          break;
+        }
+      }
+
+      expect(fastChunkAt).not.toBeNull();
+      expect(fastChunkAt!).toBeLessThan(60);
+    });
+
     it('executes A -> (B, C) -> D with B and C in parallel', async () => {
       const dag = new DAGBuilder()
         .agent('a', agent('a'))

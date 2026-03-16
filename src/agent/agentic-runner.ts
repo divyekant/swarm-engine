@@ -8,6 +8,7 @@ import type {
 import type { SwarmMemory } from '../memory/index.js';
 import type { CostTracker } from '../cost/tracker.js';
 import { classifyError } from '../errors/classification.js';
+import { formatHandoffInstructions } from '../handoffs/formatter.js';
 
 export interface AgenticRunnerParams {
   nodeId: string;
@@ -44,10 +45,17 @@ export class AgenticRunner {
   }
 
   async *run(params: AgenticRunnerParams): AsyncGenerator<SwarmEvent> {
-    const { nodeId, agent, task, adapter, memory, upstreamOutputs, signal } = params;
-    // TODO: handoffTemplate and feedbackContext are accepted but not yet injected
-    // into agentic backends. Agentic adapters manage their own context assembly,
-    // so these need a new adapter.run() parameter or convention. (#follow-up)
+    const {
+      nodeId,
+      agent,
+      task,
+      adapter,
+      memory,
+      upstreamOutputs,
+      signal,
+      handoffTemplate,
+      feedbackContext,
+    } = params;
 
     // 1. Yield agent_start
     yield {
@@ -59,7 +67,13 @@ export class AgenticRunner {
 
     try {
       // 2. Format upstream context
-      const upstreamContext = this.buildUpstreamContext(agent.id, memory, upstreamOutputs);
+      const upstreamContext = this.buildUpstreamContext(
+        agent.id,
+        memory,
+        upstreamOutputs,
+        handoffTemplate,
+        feedbackContext,
+      );
 
       // 3. Build communication tools
       const tools = this.buildCommunicationTools(agent.id, memory);
@@ -170,6 +184,8 @@ export class AgenticRunner {
     agentId: string,
     memory: SwarmMemory,
     upstreamOutputs?: { nodeId: string; agentRole: string; output: string }[],
+    handoffTemplate?: import('../types.js').HandoffTemplate,
+    feedbackContext?: import('../types.js').FeedbackContext,
   ): string {
     const sections: string[] = [];
 
@@ -194,7 +210,33 @@ export class AgenticRunner {
       sections.push(`## Shared Scratchpad\n\`\`\`\n${scratchpadContext}\n\`\`\``);
     }
 
+    if (handoffTemplate) {
+      sections.push(formatHandoffInstructions(handoffTemplate));
+    }
+
+    if (feedbackContext) {
+      sections.push(this.formatFeedbackContext(feedbackContext));
+    }
+
     return sections.join('\n\n');
+  }
+
+  private formatFeedbackContext(
+    feedbackContext: import('../types.js').FeedbackContext,
+  ): string {
+    const { iteration, maxRetries, previousFeedback, feedbackHistory } = feedbackContext;
+
+    return [
+      '## Retry Feedback',
+      `Attempt ${iteration} of ${maxRetries}. Your previous output was rejected.`,
+      '',
+      '### Latest Feedback',
+      previousFeedback,
+      '',
+      ...(feedbackHistory.length > 1
+        ? ['### Feedback History', ...feedbackHistory.map((item, index) => `${index + 1}. ${item}`)]
+        : []),
+    ].join('\n');
   }
 
   /**

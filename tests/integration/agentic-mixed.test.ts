@@ -239,6 +239,82 @@ describe('Integration: Mixed DAG with agentic + LLM nodes', () => {
       // Total output tokens: 300
       expect(totalCost.outputTokens).toBe(300);
     });
+
+    it('injects handoff instructions into an agentic producer prompt context', async () => {
+      const ccParams: AgenticRunParams[] = [];
+
+      const engine = new SwarmEngine({
+        providers: {
+          llm: { type: 'custom', adapter: mockLLMProvider() },
+          cc: { type: 'custom-agentic', agenticAdapter: mockAgenticAdapter('CC', ccParams) },
+        },
+        defaults: { provider: 'llm', model: 'test-model' },
+      });
+
+      const dag = engine.dag()
+        .agent('planner', { id: 'p', name: 'Planner', role: 'planner', systemPrompt: 'Plan', providerId: 'llm' })
+        .agent('coder', { id: 'c', name: 'Coder', role: 'coder', systemPrompt: 'Code', providerId: 'cc' })
+        .agent('reviewer', { id: 'r', name: 'Reviewer', role: 'reviewer', systemPrompt: 'Review', providerId: 'llm' })
+        .edge('planner', 'coder')
+        .edge('coder', 'reviewer', {
+          handoff: {
+            id: 'structured-review',
+            sections: [{ key: 'summary', label: 'Summary', required: true }],
+          },
+        })
+        .build();
+
+      await collectEvents(engine.run({ dag, task: 'Build a feature' }));
+
+      expect(ccParams).toHaveLength(1);
+      expect(ccParams[0].upstreamContext).toContain('## Output Format');
+      expect(ccParams[0].upstreamContext).toContain('## Summary (REQUIRED)');
+    });
+
+    it('injects retry feedback into an agentic node on feedback reruns', async () => {
+      const devParams: AgenticRunParams[] = [];
+      let qaCallCount = 0;
+
+      const qaProvider: ProviderAdapter = {
+        async *stream() {
+          qaCallCount++;
+          const response = qaCallCount === 1 ? 'reject: add tests' : 'approve';
+          yield { type: 'chunk' as const, content: response };
+          yield { type: 'usage' as const, inputTokens: 50, outputTokens: response.length };
+        },
+        estimateCost: () => 0.01,
+        getModelLimits: () => ({ contextWindow: 128_000, maxOutput: 4096 }),
+      };
+
+      const engine = new SwarmEngine({
+        providers: {
+          qa: { type: 'custom', adapter: qaProvider },
+          cc: { type: 'custom-agentic', agenticAdapter: mockAgenticAdapter('CC', devParams) },
+        },
+        defaults: { provider: 'qa', model: 'test-model' },
+      });
+
+      const dag = engine.dag()
+        .agent('developer', { id: 'dev', name: 'Developer', role: 'developer', systemPrompt: 'Build', providerId: 'cc' })
+        .agent('qa', { id: 'qa', name: 'QA', role: 'qa', systemPrompt: 'Review', providerId: 'qa' })
+        .edge('developer', 'qa')
+        .feedbackEdge({
+          from: 'qa',
+          to: 'developer',
+          maxRetries: 2,
+          evaluate: { type: 'rule', fn: (output) => output.includes('approve') ? 'pass' : 'fail' },
+          passLabel: 'pass',
+        })
+        .build();
+
+      const events = await collectEvents(engine.run({ dag, task: 'Build a feature' }));
+
+      expect(events.some((event) => event.type === 'feedback_retry')).toBe(true);
+      expect(events.some((event) => event.type === 'swarm_done')).toBe(true);
+      expect(devParams).toHaveLength(2);
+      expect(devParams[1].upstreamContext).toContain('## Retry Feedback');
+      expect(devParams[1].upstreamContext).toContain('reject: add tests');
+    });
   });
 
   // ---------------------------------------------------------------------------

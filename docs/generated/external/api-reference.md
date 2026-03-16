@@ -491,7 +491,7 @@ Configuration for a single provider.
 
 ```ts
 interface ProviderConfig {
-  type: 'anthropic' | 'anthropic-oauth' | 'openai' | 'google' | 'ollama'
+  type: 'anthropic' | 'anthropic-oauth' | 'openai' | 'ollama'
       | 'custom' | 'claude-code' | 'codex' | 'custom-agentic';
   apiKey?: string;
   baseUrl?: string;

@@ -23,9 +23,11 @@ interface Props {
   progress: UIState['progress'];
   startTime: number;
   connected: boolean;
+  feedbackCount: number;
+  warningCount: number;
 }
 
-export function StatusBar({ dagId, status, progress, startTime, connected }: Props) {
+export function StatusBar({ dagId, status, progress, startTime, connected, feedbackCount, warningCount }: Props) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -73,6 +75,18 @@ export function StatusBar({ dagId, status, progress, startTime, connected }: Pro
             {progress.completed}/{progress.total}
           </span>
         </div>
+      )}
+
+      {feedbackCount > 0 && (
+        <span className="text-xs text-cyan-300 font-mono whitespace-nowrap">
+          loops {feedbackCount}
+        </span>
+      )}
+
+      {warningCount > 0 && (
+        <span className="text-xs text-amber-300 font-mono whitespace-nowrap">
+          warnings {warningCount}
+        </span>
       )}
 
       {/* Elapsed time */}

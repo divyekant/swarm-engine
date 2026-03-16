@@ -25,6 +25,7 @@ export interface AssembleParams {
   upstreamOutputs?: UpstreamOutput[];
   swarmMemory?: SwarmMemory;
   agentId?: string;
+  agentRole?: string;
   threadHistory?: Message[];
   entityType?: string;
   entityId?: string;
@@ -66,6 +67,7 @@ export class ContextAssembler {
       upstreamOutputs,
       swarmMemory,
       agentId,
+      agentRole,
       threadHistory,
       entityType,
       entityId,
@@ -76,7 +78,7 @@ export class ContextAssembler {
     const budget = new TokenBudget(systemBudgetTokens);
 
     // --- Priority 1: Persona ---
-    const persona = await this.deps.persona.getPersona(agentId ?? 'default');
+    const persona = await this.deps.persona.getPersona(agentRole ?? agentId ?? 'default');
     if (persona) {
       if (persona.fullPrompt) {
         // Full PersonaSmith Markdown — inject as-is for maximum fidelity

@@ -253,7 +253,7 @@ export interface LoggingConfig {
 }
 
 export interface ProviderConfig {
-  type: 'anthropic' | 'anthropic-oauth' | 'openai' | 'google' | 'ollama' | 'custom' | 'claude-code' | 'codex' | 'custom-agentic';
+  type: 'anthropic' | 'anthropic-oauth' | 'openai' | 'ollama' | 'custom' | 'claude-code' | 'codex' | 'custom-agentic';
   apiKey?: string;
   baseUrl?: string;
   adapter?: ProviderAdapter;
@@ -309,6 +309,10 @@ export interface CreateRunParams {
   swarmId?: string;
   nodeId?: string;
   task: string;
+  threadId?: string;
+  entityType?: string;
+  entityId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ActivityParams {

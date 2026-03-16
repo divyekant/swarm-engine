@@ -6,6 +6,10 @@ import { EventLog } from './components/EventLog';
 
 export function App() {
   const state = useSwarmEvents();
+  const warningCount = Array.from(state.nodes.values()).reduce(
+    (count, node) => count + (node.warnings?.length ?? 0),
+    0,
+  );
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -29,6 +33,8 @@ export function App() {
               progress={state.progress}
               startTime={state.startTime}
               connected={state.connected}
+              feedbackCount={state.feedbackEvents.length}
+              warningCount={warningCount}
             />
             <DAGView
               nodes={state.nodes}

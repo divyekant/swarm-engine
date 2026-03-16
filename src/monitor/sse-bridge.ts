@@ -9,6 +9,17 @@ interface NodeState {
   output?: string;
   error?: string;
   cost?: CostSummary;
+  warnings?: string[];
+}
+
+interface FeedbackState {
+  type: 'retry' | 'escalation';
+  from: string;
+  to: string;
+  iteration: number;
+  maxRetries?: number;
+  action: string;
+  detail?: string;
 }
 
 export interface MonitorState {
@@ -19,6 +30,7 @@ export interface MonitorState {
   totalCost: CostSummary;
   progress: { completed: number; total: number };
   startTime: number;
+  feedbackEvents: FeedbackState[];
 }
 
 function emptyCost(): CostSummary {
@@ -39,6 +51,7 @@ export class SSEBridge {
     totalCost: emptyCost(),
     progress: { completed: 0, total: 0 },
     startTime: 0,
+    feedbackEvents: [],
   };
 
   get clientCount(): number {
@@ -89,6 +102,7 @@ export class SSEBridge {
       totalCost: this.state.totalCost,
       progress: this.state.progress,
       startTime: this.state.startTime,
+      feedbackEvents: this.state.feedbackEvents,
     };
   }
 
@@ -104,6 +118,7 @@ export class SSEBridge {
           totalCost: emptyCost(),
           progress: { completed: 0, total: event.nodeCount },
           startTime: Date.now(),
+          feedbackEvents: [],
         };
         break;
 
@@ -165,6 +180,46 @@ export class SSEBridge {
           reason: event.reason,
         });
         break;
+
+      case 'feedback_retry':
+        this.state.feedbackEvents.push({
+          type: 'retry',
+          from: event.fromNode,
+          to: event.toNode,
+          iteration: event.iteration,
+          maxRetries: event.maxRetries,
+          action: 'retry',
+        });
+        break;
+
+      case 'feedback_escalation':
+        this.state.feedbackEvents.push({
+          type: 'escalation',
+          from: event.fromNode,
+          to: event.toNode,
+          iteration: event.iteration,
+          action: event.policy.action,
+          detail: event.policy.message ?? event.policy.reroute,
+        });
+        break;
+
+      case 'guard_warning': {
+        const node = this.state.nodes.get(event.nodeId);
+        if (node) {
+          node.warnings = [...(node.warnings ?? []), event.message];
+        }
+        break;
+      }
+
+      case 'guard_blocked': {
+        const node = this.state.nodes.get(event.nodeId);
+        if (node) {
+          node.status = 'failed';
+          node.error = event.message;
+          node.warnings = [...(node.warnings ?? []), event.message];
+        }
+        break;
+      }
     }
   }
 }
