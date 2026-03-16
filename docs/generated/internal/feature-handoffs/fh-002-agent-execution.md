@@ -4,10 +4,10 @@ type: feature-handoff
 audience: internal
 topic: Agent Execution
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
 context-files: [src/agent/, docs/ARCHITECTURE.md]
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # Agent Execution
@@ -34,7 +34,7 @@ AgentRunner handles nodes backed by standard LLM providers (Anthropic, OpenAI, O
 1. **Provider resolution** -- The runner checks if the agent descriptor has a `providerId`. If so, it looks up that provider in the providers map. If not found or not specified, it falls back to the default provider.
 2. **Node creation** -- An AgentNode instance is created with the node ID and agent descriptor. Its status is set to `running`.
 3. **Event: agent_start** -- Emitted with the node ID, agent role, and agent name.
-4. **Context assembly** -- The runner calls `ContextAssembler.assemble()` with the system prompt, task, model context window limits, upstream outputs, swarm memory reference, and agent ID. The assembler returns a Message array ready for the provider.
+4. **Context assembly** -- The runner calls `ContextAssembler.assemble()` with the system prompt, task, model context window limits, upstream outputs, swarm memory reference, agent ID, agent role, thread history, and any entity context identifiers from `RunOptions`. The assembler returns a Message array ready for the provider.
 5. **Tool retrieval** -- The runner calls `AgentNode.getTools(memory)` to get the four communication tool definitions (send_message, scratchpad_set, scratchpad_read, scratchpad_append).
 6. **Streaming with tool-use loop** -- The runner enters a `while (continueLoop)` loop. On each iteration, it calls `provider.stream()` with the current messages, temperature, max tokens, and tools. It processes the stream:
    - `chunk` events append to the output string and yield `agent_chunk` SwarmEvents.
@@ -48,7 +48,7 @@ AgentRunner handles nodes backed by standard LLM providers (Anthropic, OpenAI, O
 AgenticRunner handles nodes backed by agentic platforms like Claude Code or Codex. Unlike AgentRunner, it does not assemble context into a message array or manage a tool-use loop -- the agentic backend handles those concerns internally. Its execution flow is:
 
 1. **Event: agent_start** -- Emitted with the node ID, agent role, and agent name.
-2. **Upstream context formatting** -- The runner builds a single context string by concatenating three sections: upstream agent outputs (formatted as markdown headers with role and node ID), inbox messages from SwarmMemory channels, and the current scratchpad state. Each section is only included if it has content.
+2. **Upstream context formatting** -- The runner builds a single context string by concatenating upstream agent outputs, handoff instructions, retry feedback context, inbox messages from SwarmMemory channels, and the current scratchpad state. Each section is only included if it has content.
 3. **Communication tool construction** -- The runner builds four AgenticTool objects: `send_message`, `scratchpad_set`, `scratchpad_read`, and `scratchpad_append`. Unlike the LLM runner's tool definitions (which are JSON schemas interpreted by the provider), these are full tool objects with an `execute` function that the agentic backend calls directly.
 4. **Adapter delegation** -- The runner calls `adapter.run()` with the task, system prompt, upstream context string, agentic options from the agent descriptor, abort signal, and the communication tools.
 5. **Event mapping** -- The runner iterates over the adapter's AgenticEvent stream and maps each event to a SwarmEvent:

@@ -2,14 +2,14 @@
 type: config-reference
 audience: external
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # Configuration Reference
 
-This document covers every configuration option for `@swarmengine/core` v0.1.6. Options are grouped by category: Engine, Providers, Defaults, Limits, Adapters, Agent, and Logging.
+This document covers every configuration option for `@swarmengine/core` v0.3.0. Options are grouped by category: Engine, Providers, Defaults, Limits, Adapters, Agent, and Logging.
 
 ---
 
@@ -190,7 +190,7 @@ interface PersistenceAdapter {
 }
 ```
 
-The built-in `InMemoryPersistence` is a 100-run LRU store. For production, implement this interface with your database of choice.
+The built-in `InMemoryPersistence` is a 100-run LRU store. For production, implement this interface with your database of choice. In `v0.3.0`, standard runs now propagate `threadId`, `entityType`, `entityId`, and `metadata` consistently into the persistence path so adapters can store richer run context.
 
 ### `ContextProvider`
 

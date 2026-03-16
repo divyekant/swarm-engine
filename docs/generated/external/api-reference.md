@@ -2,14 +2,14 @@
 type: api-reference
 audience: external
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # API Reference
 
-`@swarmengine/core` v0.1.6
+`@swarmengine/core` v0.3.0
 
 This is a TypeScript library. All exports are available from the package root:
 
@@ -45,7 +45,7 @@ Returns a new `DAGBuilder` instance for constructing a DAG definition.
 
 **`async *run(options: RunOptions): AsyncGenerator<SwarmEvent>`**
 
-Validates the DAG, applies engine defaults to agent descriptors, and executes the workflow. Yields `SwarmEvent` objects throughout the lifecycle.
+Validates the DAG, applies engine defaults to agent descriptors without mutating the caller-owned DAG, and executes the workflow. Yields `SwarmEvent` objects throughout the lifecycle.
 
 ```ts
 const dag = engine.dag()
@@ -61,7 +61,7 @@ for await (const event of engine.run({ dag, task: 'Build a login page' })) {
 }
 ```
 
-If DAG validation fails, the generator yields a single `swarm_error` event and returns. After execution completes, lifecycle hooks (`onSwarmComplete`) are called if configured.
+If DAG validation fails, the generator yields a single `swarm_error` event and returns. In `v0.3.0`, the optional `threadId`, `entityType`, `entityId`, and `metadata` fields on `RunOptions` are forwarded consistently into standard-run context assembly and persistence. After execution completes, lifecycle hooks (`onSwarmComplete`) are called if configured.
 
 ---
 
@@ -281,7 +281,7 @@ new SwarmError(message: string, errorType: AgentErrorType, cause?: Error)
 
 ### SSEBridge
 
-Bridges `SwarmEvent` broadcasts to Server-Sent Events for real-time browser-based monitoring. Maintains an internal state snapshot so late-connecting clients can catch up.
+Bridges `SwarmEvent` broadcasts to Server-Sent Events for real-time browser-based monitoring. Maintains an internal state snapshot so late-connecting clients can catch up, including feedback-loop and guard activity in `v0.3.0`.
 
 #### Properties
 
@@ -568,6 +568,8 @@ interface RunOptions {
   metadata?: Record<string, unknown>;    // Arbitrary metadata passed through.
 }
 ```
+
+For standard runs, these optional fields now flow through the runtime path instead of stopping at the type layer.
 
 #### DAGDefinition
 

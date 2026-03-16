@@ -4,9 +4,9 @@ type: feature-doc
 audience: external
 topic: Streaming Events
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # Streaming Events
@@ -38,7 +38,7 @@ for await (const event of engine.run({ dag, task: 'Build a dashboard' })) {
 
 ## Event Reference
 
-SwarmEngine emits 15 event types organized into four categories.
+SwarmEngine emits 18 event types organized into six categories.
 
 ### Agent Events
 
@@ -81,6 +81,20 @@ These events fire when cost thresholds are reached.
 |-------|------------|-------------|
 | `budget_warning` | `used`, `limit`, `percentUsed` | The swarm has consumed 80% or more of its budget. This is a warning -- execution continues. |
 | `budget_exceeded` | `used`, `limit` | The swarm has exceeded its budget. Execution halts and a `swarm_error` follows. |
+
+### Feedback Events
+
+| Event | Key Fields | Description |
+|-------|------------|-------------|
+| `feedback_retry` | `fromNode`, `toNode`, `iteration`, `maxRetries` | A feedback loop triggered a retry of the producer node. |
+| `feedback_escalation` | `fromNode`, `toNode`, `policy`, `iteration` | A feedback loop exhausted retries and applied its escalation policy. |
+
+### Guard Events
+
+| Event | Key Fields | Description |
+|-------|------------|-------------|
+| `guard_warning` | `nodeId`, `guardId`, `guardType`, `message` | A guard detected a quality issue but execution continued. |
+| `guard_blocked` | `nodeId`, `guardId`, `guardType`, `message` | A guard blocked the node output and caused the node to fail. |
 
 ## Examples
 
@@ -158,5 +172,5 @@ Several events include a `CostSummary` object. Here is what each field means:
 ## Limitations
 
 - **Events stream through, they are not buffered.** If your consumer processes events slower than the engine produces them, you are responsible for handling backpressure. In practice this is rarely an issue because LLM calls are much slower than event handling.
-- **Chunk ordering in parallel execution.** When multiple nodes run in parallel, their events are collected per node and yielded in completion order (not interleaved). You will receive all events from one node, then all events from the next.
+- **Parallel ordering is live, not grouped.** In `v0.3.0`, sibling branches emit events as they happen. Preserve `nodeId` if your UI or consumer needs to group per-branch output.
 - **No replay.** Once an event is yielded, it is not stored internally. If you need to replay events, collect them yourself in an array as they stream through.

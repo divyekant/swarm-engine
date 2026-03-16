@@ -4,14 +4,14 @@ type: feature-doc
 audience: external
 topic: Pluggable Adapters
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # Pluggable Adapters
 
-Everything in SwarmEngine is pluggable. You can bring your own LLM provider, persistence layer, memory system, persona engine, or agentic backend. All adapters are optional -- the engine ships with sensible defaults so you can get started without implementing any of them.
+Everything in SwarmEngine is pluggable. You can bring your own LLM provider, persistence layer, memory system, persona engine, or agentic backend. All adapters are optional -- the engine ships with sensible defaults so you can get started without implementing any of them. In `v0.3.0`, the built-in provider contract was tightened so `google` is no longer listed as a built-in type; use `type: 'custom'` for Google integrations.
 
 ## How to Use
 

@@ -2,9 +2,9 @@
 type: faq
 audience: internal
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # Internal FAQ
@@ -135,13 +135,13 @@ See: `src/types.ts` (EngineLimits), `src/engine.ts`
 
 **Q: What SwarmEvent types are emitted during execution?**
 
-The system emits 12 event types across two categories. Agent-level: `agent_start`, `agent_chunk`, `agent_tool_use`, `agent_done`, `agent_error`. Swarm-level: `swarm_start`, `swarm_progress`, `swarm_done`, `swarm_error`, `swarm_cancelled`. Routing: `route_decision`, `loop_iteration`. Budget: `budget_warning`, `budget_exceeded`. All events are yielded from the `engine.run()` async generator.
+The system emits 18 event types. Agent-level: `agent_start`, `agent_chunk`, `agent_tool_use`, `agent_done`, `agent_error`. Swarm-level: `swarm_start`, `swarm_progress`, `swarm_done`, `swarm_error`, `swarm_cancelled`. Routing: `route_decision`, `loop_iteration`. Budget: `budget_warning`, `budget_exceeded`. Feedback: `feedback_retry`, `feedback_escalation`. Guards: `guard_warning`, `guard_blocked`. All events are yielded from the `engine.run()` async generator.
 
 See: `src/types.ts` (SwarmEvent type), `src/streaming/events.ts`
 
 **Q: How do I set up the real-time monitor?**
 
-Call `startMonitor()` (or `startMonitor({ port: 0 })` for a random port) to start the HTTP server. In your `engine.run()` loop, call `handle.broadcast(event)` for each yielded event. Connect the monitor web UI or any SSE client to `http://localhost:{port}/events`. Use `GET /state` for a JSON snapshot of the current swarm state. Call `handle.close()` when done.
+Call `startMonitor()` (or `startMonitor({ port: 0 })` for a random port) to start the HTTP server. In your `engine.run()` loop, call `handle.broadcast(event)` for each yielded event. Connect the monitor web UI or any SSE client to `http://localhost:{port}/events`. Use `GET /state` for a JSON snapshot of the current swarm state. If you are working from the source repo, `npm run monitor:dev`, `npm run test:monitor`, and `npm run monitor:build` are now available at the root. Call `handle.close()` when done.
 
 See: `src/monitor/http-server.ts`, `src/monitor/sse-bridge.ts`
 

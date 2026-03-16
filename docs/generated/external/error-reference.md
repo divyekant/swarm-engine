@@ -2,9 +2,9 @@
 type: error-reference
 audience: external
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # Error Reference

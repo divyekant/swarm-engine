@@ -3,67 +3,52 @@ id: ds-001
 type: datasheet
 audience: marketing
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # SwarmEngine Datasheet
 
 **Product:** SwarmEngine (`@swarmengine/core`)
-**Version:** 0.1.6
+**Version:** 0.3.0
 **License:** MIT
 
 ## Overview
 
-SwarmEngine is a multi-agent DAG orchestration engine for TypeScript. Define AI agents, wire them into workflows, and execute with built-in cost tracking and real-time events.
-
----
+SwarmEngine is a TypeScript multi-agent DAG orchestration engine for teams that need structured workflows, streaming execution, and pluggable integrations without giving up control over how agents run.
 
 ## Key Capabilities
 
 ### Orchestration
 
-- **5 execution patterns** — sequential, parallel, conditional, iterative, and dynamic
-- **Fluent DAG builder API** — define complex workflows in readable, chainable calls
-- **Configurable concurrency limits** — control how many agents run simultaneously
-- **Cancellation via AbortSignal** — stop any workflow cleanly at any time
+- Sequential, parallel, conditional, iterative, and dynamic execution patterns
+- Fluent DAG builder API for readable workflow construction
+- Configurable concurrency, duration, and budget controls
 
 ### Agent Execution
 
-- **Standard LLM agents** — Anthropic, OpenAI, Ollama, or any custom provider
-- **Agentic backends** — Claude Code, Codex, or any custom execution platform
-- **Mixed DAGs** — combine LLM and agentic nodes in the same workflow
-- **3-tier conditional routing** — route by rule, regex, or LLM decision
-
-### Cost & Safety
-
-- **Per-agent and per-swarm cost tracking** — integer-cent precision across all providers
-- **Automatic budget enforcement** — hard stops with early warning thresholds
-- **Error classification** — 7 distinct error types for targeted handling
-- **Configurable iteration limits** — prevent runaway loops
+- Standard LLM providers: Anthropic, OpenAI, Ollama, and custom adapters
+- Agentic backends: Claude Code, Codex, and custom agentic adapters
+- Mixed DAGs that combine traditional and agentic nodes in one workflow
 
 ### Observability
 
-- **15 streaming event types** — full visibility into every stage of execution
-- **Built-in monitoring dashboard** — real-time SSE event stream
-- **Structured logging** — scoped child loggers for per-component context
+- Live streaming events from `engine.run()`
+- Built-in SSE monitor server with state snapshots
+- Local monitor UI with root-level test, build, dev, and mock commands
+- Feedback and guard activity visible in the monitor alongside node state
 
-### Quality Guardrails
+### Quality Controls
 
-- **Handoff Templates** — structured output formatting between agents with 4 built-in presets (standard, QA review, QA feedback, escalation) and custom template support
-- **Feedback Loops** — engine-managed revision cycles where a reviewing agent provides targeted feedback and the original agent automatically revises until approved or escalated
-- **Anti-Pattern Guards** — automatic output quality checks that catch unsupported claims (pattern-based, no extra AI cost) and scope creep (lightweight AI check), configurable as warn or block per-agent or engine-wide
-- **Graceful escalation** — configurable retry limits with automatic escalation policies (skip, fail, or reroute) so workflows never get stuck
+- Handoff templates for structured inter-node output
+- Feedback loops with retries and escalation policies
+- Evidence and scope-creep guards with warn or block modes
 
 ### Extensibility
 
-- **7 pluggable adapter interfaces** — swap any component without changing workflow code
-- **Custom provider support** — bring your own LLM backend
-- **Custom agentic backends** — integrate any execution platform
-- **Lifecycle hooks** — tap into workflow events for custom behavior
-
----
+- Pluggable persistence, context, memory, codebase, persona, and lifecycle interfaces
+- Custom provider and agentic adapter support
 
 ## Technical Specifications
 
@@ -71,35 +56,30 @@ SwarmEngine is a multi-agent DAG orchestration engine for TypeScript. Define AI 
 |------|-------|
 | Language / Runtime | TypeScript / Node.js 20+ |
 | Module System | ESM |
-| API Style | Library (programmatic TypeScript API) |
 | Package | `@swarmengine/core` |
-| License | MIT |
-
----
+| Distribution | npm package plus local monitor UI workspace |
 
 ## Dependencies
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| `@anthropic-ai/sdk` | ^0.77.0 | Anthropic LLM provider |
-| `openai` | ^6.22.0 | OpenAI LLM provider |
+| `@anthropic-ai/sdk` | ^0.77.0 | Anthropic provider |
+| `openai` | ^6.22.0 | OpenAI provider |
 
 ### Optional Dependencies
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| `@anthropic-ai/claude-agent-sdk` | ^0.2.50 | Claude Code agentic backend |
-| `@openai/codex-sdk` | ^0.104.0 | Codex agentic backend |
+| `@anthropic-ai/claude-agent-sdk` | ^0.2.50 | Claude Code backend |
+| `@openai/codex-sdk` | ^0.104.0 | Codex backend |
 
----
+## Supported Integrations
 
-## Integrations
-
-- **LLM Providers:** Anthropic Claude, OpenAI GPT, Ollama (local models), custom providers
-- **Agentic Backends:** Claude Code, Codex, custom backends
-- **Extensibility:** Any LLM or execution platform via adapter interfaces
-
----
+- Anthropic Claude
+- OpenAI GPT
+- Ollama local models
+- Custom provider adapters
+- Custom persistence, memory, context, codebase, and persona backends
 
 ## System Requirements
 

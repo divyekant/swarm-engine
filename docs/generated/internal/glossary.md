@@ -2,9 +2,9 @@
 type: glossary
 audience: internal
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # Glossary
@@ -329,7 +329,7 @@ All terms are specific to the swarm-engine project (`@swarmengine/core`). Ordere
 
 ### Monitor
 
-**Definition:** The real-time monitoring subsystem that exposes swarm execution state over HTTP. Consists of `SSEBridge` (state management and event broadcasting), an HTTP server with `/events`, `/state`, and `/health` endpoints, and a web UI for visualization.
+**Definition:** The real-time monitoring subsystem that exposes swarm execution state over HTTP. Consists of `SSEBridge` (state management and event broadcasting), an HTTP server with `/events`, `/state`, and `/health` endpoints, and a web UI for visualization. In `v0.3.0`, the monitor snapshot also tracks feedback-loop and guard activity and benefits from live parallel event delivery.
 
 **Context:** Opt-in. Consumers create a monitor server via `startMonitor()` and pipe events via `broadcast()`. Defined in `src/monitor/`.
 
@@ -405,7 +405,7 @@ All terms are specific to the swarm-engine project (`@swarmengine/core`). Ordere
 
 ### RunOptions
 
-**Definition:** The options object passed to `SwarmEngine.run()` to start a swarm execution. Contains the `DAGDefinition`, a task string, optional `AbortSignal` for cancellation, optional thread ID, optional entity type and ID for context loading, and optional metadata.
+**Definition:** The options object passed to `SwarmEngine.run()` to start a swarm execution. Contains the `DAGDefinition`, a task string, optional `AbortSignal` for cancellation, optional thread ID, optional entity type and ID for context loading, and optional metadata. In `v0.3.0`, these contextual fields now propagate consistently through standard execution and persistence.
 
 **Context:** The primary input to the engine's execution method. Defined in `src/types.ts`.
 

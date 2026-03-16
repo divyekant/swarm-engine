@@ -2,14 +2,14 @@
 type: getting-started
 audience: external
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # Getting Started with @swarmengine/core
 
-This guide walks you through installing the Swarm Engine, configuring a provider, building a two-agent DAG, and consuming the events it produces. By the end you will have a working multi-agent pipeline running locally.
+This guide walks you through installing SwarmEngine, configuring a provider, running a simple DAG, and optionally attaching the built-in monitor.
 
 ## Prerequisites
 
@@ -19,13 +19,13 @@ This guide walks you through installing the Swarm Engine, configuring a provider
 | TypeScript | 5.0+ |
 | An LLM API key | Anthropic or OpenAI |
 
-## Step 1 -- Install the package
+## Step 1: Install the package
 
 ```bash
 npm install @swarmengine/core
 ```
 
-The package ships as ESM. Your `package.json` must include:
+The package ships as ESM, so your project should use:
 
 ```json
 {
@@ -33,35 +33,9 @@ The package ships as ESM. Your `package.json` must include:
 }
 ```
 
-Your `tsconfig.json` needs the following compiler options:
+## Step 2: Configure a provider
 
-```json
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "Node16",
-    "moduleResolution": "Node16"
-  }
-}
-```
-
-## Step 2 -- Set up your API key
-
-Export the key for your chosen provider as an environment variable:
-
-```bash
-# Anthropic
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# or OpenAI
-export OPENAI_API_KEY="sk-..."
-```
-
-You will pass this key explicitly when you configure the engine in the next step. The engine does not auto-read environment variables -- you supply the key in code so you always know which value is being used.
-
-## Step 3 -- Create a SwarmEngine
-
-```typescript
+```ts
 import { SwarmEngine } from '@swarmengine/core';
 
 const engine = new SwarmEngine({
@@ -80,84 +54,83 @@ const engine = new SwarmEngine({
 });
 ```
 
-The `providers` map gives each provider a name (here `"anthropic"`). The `defaults` block tells the engine which provider and model to use when an agent does not specify its own.
+## Step 3: Build a DAG
 
-## Step 4 -- Build a DAG
-
-A DAG (Directed Acyclic Graph) defines your agents and how they connect. Use the fluent `DAGBuilder` returned by `engine.dag()`.
-
-```typescript
+```ts
 const dag = engine.dag()
   .agent('planner', {
     id: 'planner',
     name: 'Planner',
     role: 'planner',
-    systemPrompt: 'You are a technical planner. Break the task into clear, actionable steps.',
+    systemPrompt: 'Break the task into clear implementation steps.',
   })
-  .agent('developer', {
-    id: 'developer',
-    name: 'Developer',
+  .agent('builder', {
+    id: 'builder',
+    name: 'Builder',
     role: 'developer',
-    systemPrompt: 'You are a senior developer. Implement the plan you receive from the planner.',
+    systemPrompt: 'Implement the plan you receive.',
   })
-  .edge('planner', 'developer')
+  .edge('planner', 'builder')
   .build();
 ```
 
-The `.edge('planner', 'developer')` call means: run the planner first, then pass its output as context to the developer. You can add as many agents and edges as you need -- the engine handles parallelism and ordering automatically.
+## Step 4: Run the swarm
 
-## Step 5 -- Run and consume events
-
-The engine returns an `AsyncGenerator<SwarmEvent>`. Iterate over it with `for await...of`:
-
-```typescript
-for await (const event of engine.run({ dag, task: 'Build a REST API for a todo app' })) {
+```ts
+for await (const event of engine.run({
+  dag,
+  task: 'Build a login page',
+  threadId: 'thread-123',
+  entityType: 'project',
+  entityId: 'swarm-engine',
+  metadata: { source: 'quickstart' },
+})) {
   switch (event.type) {
-    case 'swarm_start':
-      console.log(`Swarm started -- ${event.nodeCount} agents`);
-      break;
-    case 'agent_start':
-      console.log(`[${event.agentRole}] started`);
-      break;
     case 'agent_chunk':
       process.stdout.write(event.content);
       break;
-    case 'agent_done':
-      console.log(`\n[${event.agentRole}] done (${event.cost.totalTokens} tokens)`);
-      break;
     case 'swarm_done':
-      console.log(`\nSwarm complete -- total cost: ${event.totalCost.costCents} cents`);
-      break;
-    case 'agent_error':
-      console.error(`[${event.agentRole}] error: ${event.message}`);
-      break;
-    case 'swarm_error':
-      console.error(`Swarm error: ${event.message}`);
+      console.log(`\nDone. Total cost: ${event.totalCost.costCents} cents`);
       break;
   }
 }
 ```
 
-## Event types you will see
+In `v0.3.0`, the optional `threadId`, `entityType`, `entityId`, and `metadata` fields are forwarded consistently through standard execution, context assembly, and persistence.
 
-During a typical run, the engine emits these events in order:
+## Step 5: Watch the run live
 
-| Event type | When it fires | Key fields |
-|---|---|---|
-| `swarm_start` | Once, at the beginning | `dagId`, `nodeCount` |
-| `agent_start` | When each agent begins | `nodeId`, `agentRole`, `agentName` |
-| `agent_chunk` | Streaming text from the LLM | `nodeId`, `content` |
-| `agent_tool_use` | Agent invokes a tool | `nodeId`, `tool`, `input` |
-| `agent_done` | Agent finishes | `nodeId`, `output`, `cost` |
-| `swarm_progress` | After each agent completes | `completed`, `total`, `runningNodes` |
-| `swarm_done` | All agents finished | `results`, `totalCost` |
-| `agent_error` | An agent failed | `nodeId`, `message`, `errorType` |
-| `swarm_error` | The entire swarm failed | `message`, `completedNodes`, `partialCost` |
+If you want browser-based visibility while the swarm runs, attach the built-in monitor:
 
-Additional event types (`route_decision`, `loop_iteration`, `budget_warning`, `budget_exceeded`, `swarm_cancelled`) appear when you use advanced features like conditional edges, cyclic edges, or budget limits.
+```ts
+import { startMonitor } from '@swarmengine/core';
 
-## Next steps
+const monitor = await startMonitor({ port: 4820 });
 
-- **[Configuration Reference](./config-reference.md)** -- Full list of engine, provider, agent, and limit options.
-- **[Error Reference](./error-reference.md)** -- Every error type, what causes it, and how to fix it.
-- **Features** -- Conditional routing, iterative loops, dynamic DAG expansion, scratchpad memory, and cost tracking are covered in the features documentation.
+for await (const event of engine.run({ dag, task: 'Build a login page' })) {
+  monitor.broadcast(event);
+}
+
+await monitor.close();
+```
+
+The monitor exposes:
+
+- `GET /events` for live SSE events
+- `GET /state` for the current execution snapshot
+- `GET /health` for liveness checks
+
+If you are working from the repo checkout rather than consuming the package, you can also run:
+
+```bash
+npm run monitor:dev
+```
+
+from the project root to start the local monitor UI.
+
+## Next Steps
+
+- [Configuration Reference](./config-reference.md)
+- [API Reference](./api-reference.md)
+- [Feature: Streaming Events](./features/feat-002-streaming-events.md)
+- [Feature: Monitor](./features/feat-009-monitor.md)

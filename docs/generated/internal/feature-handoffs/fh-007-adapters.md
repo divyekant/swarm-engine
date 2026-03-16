@@ -4,10 +4,10 @@ type: feature-handoff
 audience: internal
 topic: Pluggable Adapters
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
 context-files: [src/adapters/, docs/ARCHITECTURE.md]
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # FH-007: Pluggable Adapters
@@ -26,7 +26,7 @@ The system enables mixed workflows where some nodes call traditional LLM APIs, o
 
 **2. AgenticAdapter** -- Full agentic execution for autonomous backends. Unlike ProviderAdapter which handles raw LLM streaming, AgenticAdapter manages complete agentic sessions where the backend can execute code, read/write files, and spawn sub-agents. The interface has a single method: run() is an async generator that accepts AgenticRunParams (task, systemPrompt, upstreamContext, agenticOptions, signal, tools) and yields AgenticEvent values (chunk, tool_use, result, error). Two built-in implementations exist: ClaudeCodeAdapter wraps the Claude Agent SDK, and CodexAdapter wraps the OpenAI Codex SDK. A custom-agentic type accepts a consumer-provided AgenticAdapter instance. The createAgenticAdapter() factory handles instantiation. The isAgenticProvider() utility function checks whether a provider type string belongs to the agentic set (claude-code, codex, custom-agentic), which the DAGExecutor uses to route nodes to the correct runner.
 
-**3. PersistenceAdapter** -- Run, artifact, and thread storage. The interface defines six methods: createRun() and updateRun() for tracking agent execution records; createArtifact() for storing generated outputs; saveMessage() and loadThreadHistory() for conversation thread management; logActivity() for audit logging. The default InMemoryPersistence implementation stores everything in Maps with a configurable LRU cap (default 100 runs). When the run count exceeds the cap, the oldest entries are evicted by insertion order.
+**3. PersistenceAdapter** -- Run, artifact, and thread storage. The interface defines six methods: createRun() and updateRun() for tracking agent execution records; createArtifact() for storing generated outputs; saveMessage() and loadThreadHistory() for conversation thread management; logActivity() for audit logging. In `v0.3.0`, standard runs now propagate `threadId`, `entityType`, `entityId`, and `metadata` into the persistence path instead of dropping those values before run creation. The default InMemoryPersistence implementation stores everything in Maps with a configurable LRU cap (default 100 runs). When the run count exceeds the cap, the oldest entries are evicted by insertion order.
 
 **4. ContextProvider** -- Entity context retrieval. The interface has a single method: getContext() takes an entity type and entity ID and returns a string. The default NoopContextProvider returns an empty string. Consumers implement this to load org metadata, entity details, or other domain-specific context from their data store.
 
@@ -42,7 +42,7 @@ LifecycleHooks provides four optional callbacks: onRunStart, onRunComplete, onRu
 
 ### Provider Type Enum
 
-The ProviderConfig type field accepts: 'anthropic', 'anthropic-oauth', 'openai', 'ollama', 'custom', 'claude-code', 'codex', or 'custom-agentic'. The DAGExecutor splits these into two groups: standard providers (anthropic, anthropic-oauth, openai, ollama, custom) go through ProviderAdapter and AgentRunner; agentic providers (claude-code, codex, custom-agentic) go through AgenticAdapter and AgenticRunner.
+The ProviderConfig type field accepts: 'anthropic', 'anthropic-oauth', 'openai', 'ollama', 'custom', 'claude-code', 'codex', or 'custom-agentic'. `google` is no longer advertised as a built-in type because there is no first-party adapter implementation. The DAGExecutor splits these into two groups: standard providers (anthropic, anthropic-oauth, openai, ollama, custom) go through ProviderAdapter and AgentRunner; agentic providers (claude-code, codex, custom-agentic) go through AgenticAdapter and AgenticRunner.
 
 ### Lazy Initialization
 

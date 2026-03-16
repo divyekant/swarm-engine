@@ -2,7 +2,7 @@
 type: changelog
 audience: external
 generated: 2026-03-15
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # Changelog

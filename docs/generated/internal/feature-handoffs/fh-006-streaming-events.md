@@ -4,10 +4,10 @@ type: feature-handoff
 audience: internal
 topic: Streaming Events
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
 context-files: [src/streaming/, src/types.ts, docs/ARCHITECTURE.md]
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # Streaming Events
@@ -40,13 +40,13 @@ The DAGExecutor's `execute()` method is itself an AsyncGenerator that yields Swa
 1. The executor yields `swarm_start` at the beginning, including the DAG ID and total node count.
 2. For each batch of ready nodes, the executor checks for cancellation (AbortSignal) and duration limits before proceeding.
 3. For sequential execution (single ready node), it delegates to `runNode()` which yields events from the AgentRunner or AgenticRunner as they stream in.
-4. For parallel execution (multiple ready nodes), it delegates to `runNodesParallel()` which runs all nodes concurrently via Promise.all, collects events per node, and then yields them in completion order.
+4. For parallel execution (multiple ready nodes), it delegates to `runNodesParallel()` which runs all nodes concurrently and pushes branch events through a live queue as they are produced.
 5. After each batch, the executor checks budget thresholds and yields `budget_warning` or `budget_exceeded` if applicable.
 6. After all nodes complete (or the swarm terminates), the executor yields `swarm_done`, `swarm_error`, or `swarm_cancelled`.
 
 ### Event Types
 
-There are 14 distinct event types organized across 4 categories. Every event type includes a `type` discriminant field. Most events also carry a `nodeId` field for correlation to a specific DAG node.
+There are 18 distinct event types organized across 6 categories. Every event type includes a `type` discriminant field. Most events also carry a `nodeId` field for correlation to a specific DAG node.
 
 **Agent Events (5 types)**
 
@@ -84,6 +84,18 @@ There are 14 distinct event types organized across 4 categories. Every event typ
 
 - `budget_exceeded` -- Emitted when swarm spending exceeds the configured budget. Carries `used` and `limit`. This event is immediately followed by a `swarm_error` event, and the executor stops scheduling new nodes.
 
+**Feedback Events (2 types)**
+
+- `feedback_retry` -- Emitted when a review node causes a producer node to retry. Carries `fromNode`, `toNode`, `iteration`, and `maxRetries`.
+
+- `feedback_escalation` -- Emitted when a feedback loop reaches its retry limit and applies an escalation policy. Carries `fromNode`, `toNode`, `policy`, and `iteration`.
+
+**Guard Events (2 types)**
+
+- `guard_warning` -- Emitted when a guard flags output quality but allows execution to continue.
+
+- `guard_blocked` -- Emitted when a guard blocks the node output and forces failure.
+
 ### Error Type Classification
 
 The `agent_error` event includes an `errorType` field with one of seven values:
@@ -118,7 +130,7 @@ There are no event-specific configuration options. The streaming behavior is int
 
 - **Cancelled swarm**: When the AbortSignal fires, the executor emits `swarm_cancelled` with `completedNodes` and `partialCost`. Nodes that were mid-execution when cancellation occurred may or may not have produced partial events (agent_chunk, agent_tool_use) before the cancellation was detected.
 
-- **Parallel event ordering**: When nodes run in parallel, events from each node are collected independently and yielded in node-completion order, not in strict chronological order. All events from node A are yielded before all events from node B, even if some of B's events occurred before A's later events. This simplifies consumer logic (events per node are contiguous) but means timestamp-based ordering across nodes is not guaranteed.
+- **Parallel event ordering**: When nodes run in parallel, sibling-branch events are now emitted live as they arrive. In-branch order is preserved, but consumers should use `nodeId` rather than assuming contiguous per-node batches.
 
 - **Errors during streaming**: When an agent fails, the executor emits `agent_error` for that node, marks it as failed, and skips its downstream dependencies. Other nodes that are not dependent on the failed node continue executing normally. The swarm only terminates early if a budget or duration limit is hit, or if all remaining nodes are blocked by failures.
 

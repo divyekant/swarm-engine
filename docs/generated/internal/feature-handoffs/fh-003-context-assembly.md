@@ -4,10 +4,10 @@ type: feature-handoff
 audience: internal
 topic: Context Assembly
 status: draft
-generated: 2026-02-28
+generated: 2026-03-15
 source-tier: direct
 context-files: [src/context/, docs/ARCHITECTURE.md]
-hermes-version: 1.0.0
+hermes-version: 1.0.1
 ---
 
 # Context Assembly
@@ -40,7 +40,7 @@ The `assemble()` method takes an AssembleParams object and returns a Message arr
 
 1. **Budget allocation** -- The assembler reserves 75% of the model's context window for the system message content. The remaining 25% is reserved for the response and thread history overhead. A TokenBudget instance is created with this calculated token limit.
 
-2. **Priority 1: Persona identity** -- The assembler calls `PersonaProvider.getPersona()` with the agent ID. If a persona is found, it is added to the budget at priority 1 (never truncated). Two formats are supported: if the persona has a `fullPrompt` field, it is injected as-is for maximum fidelity. Otherwise, a structured block is built from the persona's name, role, traits, constraints, communication style, and expertise fields.
+2. **Priority 1: Persona identity** -- The assembler calls `PersonaProvider.getPersona()` with the agent role (falling back to the agent ID when needed). If a persona is found, it is added to the budget at priority 1 (never truncated). Two formats are supported: if the persona has a `fullPrompt` field, it is injected as-is for maximum fidelity. Otherwise, a structured block is built from the persona's name, role, traits, constraints, communication style, and expertise fields.
 
 3. **Priority 1: System prompt** -- The agent's system prompt is added at priority 1. It is never truncated.
 
@@ -108,7 +108,7 @@ Context assembly is internal to the engine -- consumers do not call it directly.
 
 - The agent's `systemPrompt` field, which becomes the foundation of the context.
 - The agent's `persona` field, which adds identity context.
-- The `entityType` and `entityId` fields in RunOptions, which trigger entity context and codebase context retrieval.
+- The `threadId`, `entityType`, and `entityId` fields in `RunOptions`, which now consistently trigger thread history loading plus entity and codebase context retrieval for standard runs.
 - The adapter implementations provided in SwarmEngineConfig (`context`, `memory`, `codebase`, `persona`), which determine what external context is available.
 
 The assembled context is invisible in the SwarmEvent stream. The consumer sees only the agent's output. To observe what context was assembled, enable debug-level logging via `SwarmEngineConfig.logging` -- the assembler logs each section's character length and the final total.
